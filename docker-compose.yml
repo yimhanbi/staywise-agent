@@ -1,0 +1,17 @@
+# Staywise Agent — 로컬 개발용 (Podman/Docker)
+# 사용: docker compose up -d
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: staywise
+    ports:
+      - "5432:5432"
+    volumes:
+      - staywise_pgdata:/var/lib/postgresql/data
+
+volumes:
+  staywise_pgdata:

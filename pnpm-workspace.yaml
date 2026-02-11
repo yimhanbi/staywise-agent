@@ -1,0 +1,4 @@
+packages:
+  - "apps/mcp-bridge"
+  - "frontend"
+  - "packages/*"

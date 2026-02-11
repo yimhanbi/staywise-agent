@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+frontend/.next/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Env and secrets
+.env
+.env.local
+*.pem
+
+# IDE and OS
+.idea/
+.vscode/
+.DS_Store
+*.log
+
+# Debug and test
+.coverage
+htmlcov/
+.pytest_cache/
+.next/
