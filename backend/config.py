@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     app_name: str = "Staywise API"
     debug: bool = False
-    database_url: str = "postgresql://user:password@localhost:5432/staywise"
+    database_url: str = "postgresql+asyncpg://user:password@localhost:5432/staywise"
     api_prefix: str = "/api"
 
     class Config:

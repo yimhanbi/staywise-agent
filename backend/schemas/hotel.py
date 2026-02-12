@@ -2,7 +2,7 @@ from pydantic import BaseModel
 
 
 class HotelResponse(BaseModel):
-    id: str
+    id: int
     name: str
     address: str | None
     price_per_night: int | None

@@ -1,8 +1,14 @@
+import sys
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+# Ensure local monorepo package imports (packages/database) resolve at runtime.
+PACKAGES_DIR = Path(__file__).resolve().parents[1] / "packages"
+if str(PACKAGES_DIR) not in sys.path:
+    sys.path.insert(0, str(PACKAGES_DIR))
 
 #packages/database에서 db_manager를 가져오기
 from database.connection import db_manager

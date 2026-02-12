@@ -11,3 +11,6 @@ dependencies = [
     "pgvector",
     "pydantic-settings"
 ]
+
+[tool.setuptools.packages.find]
+include = ["database*"]

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing impor Optional 
+from typing import Optional
 
 
 #패키지에서 필요한 모듈 임포트
@@ -18,23 +18,17 @@ async def list_hotels(
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db_session) #DB 세션 주입
 ):
+    stmt = select(Hotel)
+    if q:
+        stmt = stmt.where(Hotel.name.ilike(f"%{q}%"))
 
-  #1. 쿼리 생성
-  stmt = select(Hotel)
-
-
-  #2. 검색어 필터링 (q가 있을 경우)
-  if q:
-      stmt = stmt.where(Hotel.name.ilike(f"%{q}%"))
-      
-      
-      
-    #3. 전체 개수 조희
-    count_stmt = select(func.count()).select_fromI(stmt.subquery())
+    count_stmt = select(func.count()).select_from(stmt.subquery())
     total_result = await db.execute(count_stmt)
     total = total_result.scalar() or 0
-    
-    
+
+    result = await db.execute(stmt.offset(offset).limit(limit))
+    items = result.scalars().all()
+
     return HotelListResponse(items=items, total=total)
 
 
@@ -51,7 +45,6 @@ async def get_hotel(
         raise HTTPException(status_code=404, detail="Hotel not found")
     
     return hotel 
-
 
 
 
