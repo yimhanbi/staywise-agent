@@ -1,19 +1,32 @@
 // views/components/hotel_card.tsx
-export const HotelCard = ({ hotel }: { hotel: any }) => {
-  const imageSrc =
-    hotel.imageUrl ??
-    hotel.image_url ??
-    `https://picsum.photos/seed/${hotel.id ?? "staywise"}/300/200`;
-
-  const nightlyPrice = hotel.price_per_night ?? hotel.price;
-  const rating = typeof hotel.rating === "number" ? hotel.rating.toFixed(1) : "4.8";
+export const HotelCard = ({ hotel, onClick }: { hotel: any; onClick?: () => void }) => {
+  const imageSrc = hotel.image_url ?? hotel.imageUrl ?? `https://picsum.photos/seed/${hotel.id}/300/200`;
+  const nightlyPrice = hotel.price ?? hotel.price_per_night;
+  const rating = hotel.rating ?? 4.5;
+  const stayNights = hotel.stay_nights ?? 1;
+  const totalPrice = typeof nightlyPrice === "number" ? nightlyPrice * stayNights : null;
 
   return (
-    <div className="flex flex-col gap-2 group cursor-pointer">
-      <div className="aspect-square w-full overflow-hidden rounded-xl relative">
+    <div
+      className="flex flex-col gap-2 group cursor-pointer"
+      onClick={onClick}
+      role={onClick ? "button" : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={
+        onClick
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onClick();
+              }
+            }
+          : undefined
+      }
+    >
+      <div className="aspect-square w-full relative overflow-hidden rounded-xl">
         <img
           src={imageSrc}
-          className="object-cover w-full h-full group-hover:scale-105 transition"
+          className="object-cover h-full w-full group-hover:scale-110 transition"
           alt={hotel.name}
         />
         <button className="absolute top-3 right-3 text-white/80 hover:text-[#0F766E]">
@@ -21,23 +34,28 @@ export const HotelCard = ({ hotel }: { hotel: any }) => {
         </button>
       </div>
 
-      <div className="flex flex-col mt-2">
-        <div className="flex justify-between items-center gap-2">
-          <div className="font-bold text-[15px] truncate flex-1">{hotel.name}</div>
-          <div className="flex items-center gap-1 text-sm shrink-0">
+      <div className="flex flex-col">
+        <div className="flex justify-between items-center">
+          <span className="font-bold text-base truncate flex-1">{hotel.name}</span>
+          <div className="flex items-center gap-1 text-sm">
             <span>★</span>
             <span>{rating}</span>
           </div>
         </div>
 
-        <div className="font-light text-gray-500 text-sm truncate">{hotel.address}</div>
-        <div className="font-light text-gray-500 text-sm">2월 15일 ~ 20일</div>
+        <span className="text-gray-500 text-sm truncate">{hotel.address}</span>
+        <span className="text-gray-500 text-sm">{hotel.date_range || "2월 15일 ~ 20일"}</span>
 
-        <div className="flex flex-row items-center gap-1 mt-1">
-          <div className="font-bold">
-            {nightlyPrice ? `₩ ${nightlyPrice.toLocaleString()}` : "별도 문의"}
+        <div className="flex flex-row items-center justify-between mt-1">
+          <div className="flex items-center gap-1">
+            <span className="font-bold">
+              {nightlyPrice ? `₩${nightlyPrice.toLocaleString()}` : "별도 문의"}
+            </span>
+            <span className="font-light text-sm">/ {stayNights}박</span>
           </div>
-          <div className="font-light text-sm">/ 박</div>
+          <div className="text-xs text-gray-400 underline cursor-pointer">
+            {totalPrice ? `총액 ₩${totalPrice.toLocaleString()}` : ""}
+          </div>
         </div>
       </div>
     </div>

@@ -5,6 +5,66 @@ from sqlalchemy.orm import sessionmaker
 from dotenv import load_dotenv
 import os
 import random
+from datetime import datetime, timedelta
+
+TYPE_DESCRIPTIONS = {
+    "city": [
+        "도심 속에서 편안한 휴식을 즐길 수 있는 공간입니다.",
+        "이동이 편리해 여행 일정을 효율적으로 구성할 수 있습니다.",
+        "주요 명소와 가까워 짧은 일정에도 잘 어울리는 숙소입니다.",
+    ],
+    "nature": [
+        "자연에 둘러싸여 온전한 휴식을 즐길 수 있는 공간입니다.",
+        "조용한 환경에서 일상의 리듬을 되찾기에 좋은 숙소입니다.",
+        "창밖 풍경만으로도 충분한 여유를 느낄 수 있습니다.",
+    ],
+    "emotional": [
+        "머무는 시간 자체가 특별하게 느껴지는 공간입니다.",
+        "공간 곳곳에 섬세한 분위기가 담긴 숙소입니다.",
+        "사진보다 직접 머물렀을 때 더 매력적인 공간입니다.",
+    ],
+    "business": [
+        "업무와 휴식을 균형 있게 병행할 수 있는 숙소입니다.",
+        "조용한 환경과 안정적인 편의시설을 갖추고 있습니다.",
+        "출장이나 단기 체류에 적합한 공간입니다.",
+    ],
+}
+
+BASE_DESCRIPTIONS = [
+    "하루의 끝을 편안하게 마무리할 수 있습니다.",
+    "여행의 피로를 부드럽게 풀어주는 공간입니다.",
+    "누구와 함께 머물러도 만족도가 높은 숙소입니다.",
+]
+
+URGENCY_MESSAGES = [
+    "최근 많은 게스트가 이 숙소를 확인하고 있어요.",
+    "비슷한 숙소보다 빠르게 예약되고 있어요.",
+    "선택하신 날짜는 관심이 집중되고 있어요.",
+    "최근 예약이 꾸준히 이어지고 있어요.",
+]
+
+BADGES = ["인기 숙소", "요즘 핫한 숙소", "빠른 예약", "조회 급증"]
+
+
+def generate_copy():
+    hotel_type = random.choice(list(TYPE_DESCRIPTIONS.keys()))
+    description = (
+        f"{random.choice(TYPE_DESCRIPTIONS[hotel_type])} "
+        f"{random.choice(BASE_DESCRIPTIONS)}"
+    )
+
+    urgency = None
+    if random.random() < 0.45:
+        urgency = random.choice(URGENCY_MESSAGES)
+
+    badges = random.sample(BADGES, k=random.randint(0, 2))
+
+    return {
+        "type": hotel_type,
+        "description": description,
+        "urgency": urgency,
+        "badges": badges,
+    }
 
 # 환경 변수 로드
 load_dotenv()
@@ -100,15 +160,35 @@ def get_hotels(
         # 응답 데이터 변환
         results = []
         for hotel in hotels:
+            copy = generate_copy()
+            start_offset = random.randint(1, 30)
+            stay_days = random.randint(1, 7)
+            base_date = datetime.now() + timedelta(days=start_offset)
+            end_date = base_date + timedelta(days=stay_days)
+
+            date_range = f"{base_date.month}월 {base_date.day}일 ~ {end_date.day}일"
+            if base_date.month != end_date.month:
+                date_range = (
+                    f"{base_date.month}월 {base_date.day}일 ~ "
+                    f"{end_date.month}월 {end_date.day}일"
+                )
+
             results.append({
                 "id": hotel.id,
                 "name": hotel.name,
                 "address": hotel.address,
-                "category": hotel.category or "가성비",
+                "category": hotel.category,
                 "image_url":f"https://picsum.photos/seed/{hotel.id}/300/200",
-                "price": random.randrange(50000, 500001, 1000),
-                "rating": round(random.uniform(3.5, 5.0), 1),
-                "reviews": random.randint(10, 500),
+                "price": random.randrange(50000, 550000, 10000),
+                "rating": round(random.uniform(3.8, 5.0), 2),
+                "reviews": random.randint(10, 300),
+                "date_range": date_range,
+                "stay_nights": stay_days,
+                "description": copy["description"],
+                "urgency": copy["urgency"],
+                "urgency_message": copy["urgency"],
+                "badges": copy["badges"],
+                "hotel_type": copy["type"],
             })
         
         return {

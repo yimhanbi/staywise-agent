@@ -84,7 +84,9 @@ export default function HotelDetailPage({ params }: PageProps) {
         <div className="relative">
           <div className="sticky top-28 border border-neutral-200 rounded-3xl p-8 shadow-2xl bg-white">
             <div className="flex justify-between items-baseline mb-6">
-              <span className="text-2xl font-bold">₩{hotel.price_per_night.toLocaleString()}</span>
+              <span className="text-2xl font-bold">
+                ₩{(hotel.price ?? hotel.price_per_night ?? 0).toLocaleString()}
+              </span>
               <span className="text-neutral-500 text-sm">/ 박</span>
             </div>
             

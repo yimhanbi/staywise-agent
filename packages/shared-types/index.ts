@@ -14,9 +14,20 @@ export type SearchParamsInput = z.input<typeof SearchParamsSchema>;
 export type SearchParams = z.infer<typeof SearchParamsSchema>;
 
 export interface Hotel {
-  id: string;
+  id: string | number;
   name: string;
   address: string;
-  price_per_night: number;
+  price_per_night?: number;
+  price?: number;
+  rating?: number;
+  reviews?: number;
+  date_range?: string;
+  stay_nights?: number;
+  description?: string;
+  urgency?: string | null;
+  urgency_message?: string | null;
+  badges?: string[];
+  hotel_type?: string;
   imageUrl?: string;
+  image_url?: string;
 }
