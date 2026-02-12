@@ -7,6 +7,7 @@ export const SearchParamsSchema = z.object({
   adults: z.number().default(1),
   children: z.number().default(0),
   category: z.string().optional(),
+  page: z.number().int().positive().optional(),
 });
 
 export type SearchParamsInput = z.input<typeof SearchParamsSchema>;
