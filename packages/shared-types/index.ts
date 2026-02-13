@@ -30,4 +30,8 @@ export interface Hotel {
   hotel_type?: string;
   imageUrl?: string;
   image_url?: string;
+  max_guests?: number;
+  bedrooms?: number;
+  beds?: number;
+  bathrooms?: number;
 }

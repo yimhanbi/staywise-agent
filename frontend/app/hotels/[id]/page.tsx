@@ -57,7 +57,9 @@ export default function HotelDetailPage({ params }: PageProps) {
         <div className="md:col-span-2">
           <section className="border-b pb-8 mb-8">
             <h2 className="text-2xl font-semibold mb-2">Staywise가 추천하는 특별한 숙소</h2>
-            <p className="text-gray-500">최대 인원 4명 · 침실 2개 · 침대 2개 · 욕실 1개</p>
+            <p className="text-gray-600">
+              최대 인원 {hotel.max_guests ?? 4}명 · 침실 {hotel.bedrooms ?? 2}개 · 침대 {hotel.beds ?? 2}개 · 욕실 {hotel.bathrooms ?? 1}개
+            </p>
           </section>
 
           <section className="mb-10">

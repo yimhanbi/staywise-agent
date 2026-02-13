@@ -1,6 +1,9 @@
 // views/components/hotel_card.tsx
 export const HotelCard = ({ hotel, onClick }: { hotel: any; onClick?: () => void }) => {
-  const imageSrc = hotel.image_url ?? hotel.imageUrl ?? `https://picsum.photos/seed/${hotel.id}/300/200`;
+  const imageSrc =
+    hotel.image_url ??
+    hotel.imageUrl ??
+    `https://loremflickr.com/800/600/mansion,villa/all?lock=${hotel.id}`;
   const nightlyPrice = hotel.price ?? hotel.price_per_night;
   const rating = hotel.rating ?? 4.5;
   const stayNights = hotel.stay_nights ?? 1;
@@ -28,6 +31,11 @@ export const HotelCard = ({ hotel, onClick }: { hotel: any; onClick?: () => void
           src={imageSrc}
           className="object-cover h-full w-full group-hover:scale-110 transition"
           alt={hotel.name}
+          onError={(e) => {
+            const img = e.currentTarget;
+            img.onerror = null;
+            img.src = `https://loremflickr.com/800/600/mansion,villa/all?lock=fallback-${hotel.id}`;
+          }}
         />
         <button className="absolute top-3 right-3 text-white/80 hover:text-[#0F766E]">
           <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="m11.645 20.91-.007-.003c-.125-.063-2.396-1.215-4.63-3.618-2.31-2.484-4.508-5.733-4.508-9.289 0-3.155 2.213-5.5 5-5.5 1.62 0 3.064.767 4 2.003C12.436 3.27 13.88 2.503 15.5 2.503c2.787 0 5 2.345 5 5.5 0 3.556-2.198 6.805-4.508 9.289-2.234 2.403-4.505 3.555-4.63 3.618l-.007.003-.022.012-.01.005z"/></svg>

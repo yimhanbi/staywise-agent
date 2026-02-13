@@ -8,11 +8,13 @@ interface HotelDetailModalProps {
 }
 
 export const HotelDetailModal = ({ hotel, isOpen, onClose }: HotelDetailModalProps) => {
+  const hotelIdNum = Number(hotel?.id) || 0;
+
   return (
     <AnimatePresence>
       {isOpen && hotel && (
         <motion.div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 md:p-8"
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-[#0F172A]/55 backdrop-blur-sm p-4 md:p-8"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -28,10 +30,10 @@ export const HotelDetailModal = ({ hotel, isOpen, onClose }: HotelDetailModalPro
             <div className="absolute top-5 left-5 z-50">
               <button
                 onClick={onClose}
-                className="p-2 bg-white rounded-full shadow-md hover:bg-gray-100 transition border border-gray-200"
+                className="p-2 bg-white rounded-full shadow-md hover:bg-[#F0FDFA] transition border border-[#99F6E4]"
                 aria-label="닫기"
               >
-                <svg viewBox="0 0 32 32" className="w-4 h-4" fill="none" stroke="black" strokeWidth="3">
+                <svg viewBox="0 0 32 32" className="w-4 h-4" fill="none" stroke="#0F766E" strokeWidth="3">
                   <path d="M6 6L26 26M26 6L6 26" />
                 </svg>
               </button>
@@ -41,35 +43,40 @@ export const HotelDetailModal = ({ hotel, isOpen, onClose }: HotelDetailModalPro
               <div className="grid grid-cols-4 gap-2 h-[300px] md:h-[450px] w-full p-4">
                 <div className="col-span-2 row-span-2 relative overflow-hidden rounded-l-2xl">
                   <img
-                    src={hotel.image_url ?? hotel.imageUrl ?? `https://picsum.photos/seed/${hotel.id}/600/600`}
+                    src={`https://loremflickr.com/800/800/mansion,hotel/all?lock=${hotelIdNum}`}
                     className="w-full h-full object-cover hover:scale-105 transition duration-500"
                     alt={hotel.name}
+                    onError={(e) => {
+                      const img = e.currentTarget;
+                      img.onerror = null;
+                      img.src = hotel.image_url ?? hotel.imageUrl ?? `https://loremflickr.com/800/600/mansion,villa,hotel/all?lock=${hotelIdNum}`;
+                    }}
                   />
                 </div>
                 <div className="col-span-1 h-full relative overflow-hidden">
                   <img
-                    src={`https://picsum.photos/seed/${hotel.id}1/400/300`}
+                    src={`https://loremflickr.com/600/400/bedroom,interior/all?lock=${hotelIdNum + 10}`}
                     className="w-full h-full object-cover hover:scale-105 transition duration-500"
                     alt={`${hotel.name} gallery 1`}
                   />
                 </div>
                 <div className="col-span-1 h-full relative overflow-hidden rounded-tr-2xl">
                   <img
-                    src={`https://picsum.photos/seed/${hotel.id}2/400/300`}
+                    src={`https://loremflickr.com/600/400/livingroom,luxury/all?lock=${hotelIdNum + 20}`}
                     className="w-full h-full object-cover hover:scale-105 transition duration-500"
                     alt={`${hotel.name} gallery 2`}
                   />
                 </div>
                 <div className="col-span-1 h-full relative overflow-hidden">
                   <img
-                    src={`https://picsum.photos/seed/${hotel.id}3/400/300`}
+                    src={`https://loremflickr.com/600/400/pool,villa/all?lock=${hotelIdNum + 30}`}
                     className="w-full h-full object-cover hover:scale-105 transition duration-500"
                     alt={`${hotel.name} gallery 3`}
                   />
                 </div>
                 <div className="col-span-1 h-full relative overflow-hidden rounded-br-2xl">
                   <img
-                    src={`https://picsum.photos/seed/${hotel.id}4/400/300`}
+                    src={`https://loremflickr.com/600/400/bathroom,modern/all?lock=${hotelIdNum + 40}`}
                     className="w-full h-full object-cover hover:scale-105 transition duration-500"
                     alt={`${hotel.name} gallery 4`}
                   />
@@ -81,7 +88,7 @@ export const HotelDetailModal = ({ hotel, isOpen, onClose }: HotelDetailModalPro
                   <div>
                     <h2 className="text-3xl font-bold text-gray-900">{hotel.name}</h2>
                     <div className="flex items-center gap-2 mt-2 text-sm text-gray-600">
-                      <span className="flex items-center gap-1 font-bold text-black">★ {hotel.rating ?? 4.8}</span>
+                      <span className="flex items-center gap-1 font-bold text-[#0F766E]">★ {hotel.rating ?? 4.8}</span>
                       <span>•</span>
                       <span className="underline cursor-pointer font-medium">후기 {hotel.reviews ?? 120}개</span>
                       <span>•</span>
@@ -94,7 +101,7 @@ export const HotelDetailModal = ({ hotel, isOpen, onClose }: HotelDetailModalPro
                       {hotel.badges.map((badge: string) => (
                         <span
                           key={badge}
-                          className="text-xs px-2 py-1 bg-gray-100 rounded-full text-gray-700"
+                          className="text-xs px-2 py-1 bg-[#F0FDFA] rounded-full text-[#115E59] border border-[#99F6E4]"
                         >
                           {badge}
                         </span>
@@ -104,13 +111,15 @@ export const HotelDetailModal = ({ hotel, isOpen, onClose }: HotelDetailModalPro
 
                   <hr className="border-gray-100" />
 
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-gradient-to-tr from-[#FF385C] to-[#BD1E59] rounded-full flex items-center justify-center text-white font-bold">
+                  <div className="flex items-center gap-4 py-6 border-b border-gray-100">
+                    <div className="w-12 h-12 bg-[#2D6A6A] rounded-full flex items-center justify-center text-white font-bold text-sm">
                       AI
                     </div>
-                    <div>
-                      <h4 className="font-bold text-lg">StayWise AI님이 호스팅하는 숙소</h4>
-                      <p className="text-sm text-gray-500">최대 인원 4명 · 침실 2개 · 침대 2개 · 욕실 1개</p>
+                    <div className="flex flex-col">
+                      <h4 className="text-lg font-bold text-black">StayWise AI님이 호스팅하는 숙소</h4>
+                      <p className="text-sm text-gray-600">
+                        최대 인원 {hotel.max_guests ?? 4}명 · 침실 {hotel.bedrooms ?? 2}개 · 침대 {hotel.beds ?? 2}개 · 욕실 {hotel.bathrooms ?? 1}개
+                      </p>
                     </div>
                   </div>
 
@@ -121,7 +130,7 @@ export const HotelDetailModal = ({ hotel, isOpen, onClose }: HotelDetailModalPro
                   </p>
 
                   {(hotel.urgency || hotel.urgency_message) && (
-                    <p className="text-sm text-rose-600 font-medium">
+                    <p className="text-sm text-[#0F766E] font-semibold">
                       🔥 {hotel.urgency || hotel.urgency_message}
                     </p>
                   )}
@@ -136,24 +145,24 @@ export const HotelDetailModal = ({ hotel, isOpen, onClose }: HotelDetailModalPro
                       </div>
                     </div>
 
-                    <div className="border border-gray-400 rounded-xl overflow-hidden mb-4">
-                      <div className="grid grid-cols-2 border-b border-gray-400">
-                        <div className="p-3 border-r border-gray-400 hover:bg-gray-50 cursor-pointer">
+                    <div className="border border-[#99F6E4] rounded-xl overflow-hidden mb-4">
+                      <div className="grid grid-cols-2 border-b border-[#99F6E4]">
+                        <div className="p-3 border-r border-[#99F6E4] hover:bg-[#F0FDFA] cursor-pointer">
                           <label className="block text-[10px] font-extrabold uppercase text-gray-900">체크인</label>
                           <div className="text-sm text-gray-500">날짜 추가</div>
                         </div>
-                        <div className="p-3 hover:bg-gray-50 cursor-pointer">
+                        <div className="p-3 hover:bg-[#F0FDFA] cursor-pointer">
                           <label className="block text-[10px] font-extrabold uppercase text-gray-900">체크아웃</label>
                           <div className="text-sm text-gray-500">날짜 추가</div>
                         </div>
                       </div>
-                      <div className="p-3 hover:bg-gray-50 cursor-pointer">
+                      <div className="p-3 hover:bg-[#F0FDFA] cursor-pointer">
                         <label className="block text-[10px] font-extrabold uppercase text-gray-900">게스트</label>
                         <div className="text-sm text-gray-500">게스트 1명</div>
                       </div>
                     </div>
 
-                    <button className="w-full bg-[#FF385C] text-white py-3.5 rounded-xl font-bold text-lg hover:bg-[#D70466] transition-colors shadow-lg active:scale-95 transition-transform">
+                    <button className="w-full bg-[#0F766E] text-white py-3.5 rounded-xl font-bold text-lg hover:bg-[#115E59] transition-colors shadow-lg active:scale-95 transition-transform">
                       예약하기
                     </button>
 

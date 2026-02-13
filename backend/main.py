@@ -46,6 +46,29 @@ URGENCY_MESSAGES = [
 BADGES = ["인기 숙소", "요즘 핫한 숙소", "빠른 예약", "조회 급증"]
 
 
+def generate_random_stay_info(seed=None):
+    """인원을 기준으로 침실·침대·욕실을 상식적으로 결정."""
+    if seed is not None:
+        rng = random.Random(seed)
+    else:
+        rng = random
+    max_guests = rng.choice([2, 4, 6, 8])
+    if max_guests <= 2:
+        bedrooms = 1
+    elif max_guests <= 4:
+        bedrooms = rng.randint(1, 2)
+    else:
+        bedrooms = rng.randint(2, 4)
+    beds = rng.randint((max_guests // 2), max_guests)
+    bathrooms = max(1, bedrooms - rng.randint(0, 1))
+    return {
+        "max_guests": max_guests,
+        "bedrooms": bedrooms,
+        "beds": beds,
+        "bathrooms": bathrooms,
+    }
+
+
 def generate_copy():
     hotel_type = random.choice(list(TYPE_DESCRIPTIONS.keys()))
     description = (
@@ -66,7 +89,7 @@ def generate_copy():
         "badges": badges,
     }
 
-# 환경 변수 로드
+# 환경 변수 로드 (backend 디렉터리 또는 프로젝트 루트의 .env)
 load_dotenv()
 
 # FastAPI 앱 생성
@@ -81,8 +104,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 데이터베이스 연결
-DATABASE_URL = os.getenv("DATABASE_URL")
+# 데이터베이스 연결 (DATABASE_URL 없으면 기본값 사용 — .env에서 설정 권장)
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql://user:password@localhost:5432/staywise",
+)
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
@@ -105,6 +131,15 @@ class Hotel(Base):
     longitude = Column(Float)
     description = Column(Text)
     content_id = Column(String(50), unique=True)
+
+
+# 테이블이 없으면 생성 (앱 시작 시 한 번)
+try:
+    Base.metadata.create_all(bind=engine)
+except Exception as e:
+    import traceback
+    print(f"[StayWise] DB 테이블 생성 확인 실패 (계속 진행): {e}")
+    traceback.print_exc()
 
 # API 엔드포인트
 @app.get("/")
@@ -161,6 +196,7 @@ def get_hotels(
         results = []
         for hotel in hotels:
             copy = generate_copy()
+            stay_info = generate_random_stay_info(seed=hotel.id)
             start_offset = random.randint(1, 30)
             stay_days = random.randint(1, 7)
             base_date = datetime.now() + timedelta(days=start_offset)
@@ -178,7 +214,7 @@ def get_hotels(
                 "name": hotel.name,
                 "address": hotel.address,
                 "category": hotel.category,
-                "image_url":f"https://picsum.photos/seed/{hotel.id}/300/200",
+                "image_url": f"https://loremflickr.com/800/600/mansion,villa,hotel/all?lock={hotel.id}",
                 "price": random.randrange(50000, 550000, 10000),
                 "rating": round(random.uniform(3.8, 5.0), 2),
                 "reviews": random.randint(10, 300),
@@ -189,6 +225,10 @@ def get_hotels(
                 "urgency_message": copy["urgency"],
                 "badges": copy["badges"],
                 "hotel_type": copy["type"],
+                "max_guests": stay_info["max_guests"],
+                "bedrooms": stay_info["bedrooms"],
+                "beds": stay_info["beds"],
+                "bathrooms": stay_info["bathrooms"],
             })
         
         return {
@@ -198,9 +238,15 @@ def get_hotels(
         }
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        import traceback
+        traceback.print_exc()
+        detail = str(e)
+        if "does not exist" in detail or "relation" in detail.lower():
+            detail = f"{detail} — DB에 hotels 테이블이 없을 수 있습니다. backend에서 python sync_data.py 실행 후 재시도하세요."
+        raise HTTPException(status_code=500, detail=detail)
     finally:
         db.close()
+
 
 @app.get("/api/hotels/{hotel_id}")
 def get_hotel_detail(hotel_id: int):
@@ -212,7 +258,7 @@ def get_hotel_detail(hotel_id: int):
         
         if not hotel:
             raise HTTPException(status_code=404, detail="숙박 정보를 찾을 수 없습니다")
-        
+        stay_info = generate_random_stay_info(seed=hotel.id)
         return {
             "id": hotel.id,
             "name": hotel.name,
@@ -223,7 +269,11 @@ def get_hotel_detail(hotel_id: int):
             "latitude": hotel.latitude,
             "longitude": hotel.longitude,
             "description": hotel.description,
-            "content_id": hotel.content_id
+            "content_id": hotel.content_id,
+            "max_guests": stay_info["max_guests"],
+            "bedrooms": stay_info["bedrooms"],
+            "beds": stay_info["beds"],
+            "bathrooms": stay_info["bathrooms"],
         }
         
     finally:

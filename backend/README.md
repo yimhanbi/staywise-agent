@@ -10,6 +10,8 @@
 
 ## 실행
 
+**반드시 `backend` 디렉터리에서 실행하세요.** (프로젝트 루트에서 실행하면 `Could not import module "main"` 에러가 납니다.)
+
 ```bash
 cd backend
 python -m venv .venv
@@ -18,4 +20,4 @@ pip install -r requirements.txt
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-DB는 프로젝트 루트에서 `docker compose up -d` 후 `DATABASE_URL` 설정.
+DB는 프로젝트 루트에서 `docker compose up -d` 후 `.env`에 `DATABASE_URL` 설정.

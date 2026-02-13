@@ -3,9 +3,14 @@
 import { useCallback, useEffect, useState, useRef, FormEvent } from "react";
 import { Hotel } from "@staywise/shared-types";
 import { hotelService } from "@/services/hotelService";
+import type { DateRange } from "react-day-picker";
 import { HotelCard } from "./components/hotel_card";
 import { HotelSkeleton } from "./components/hotel_skeleton";
 import { HotelDetailModal } from "./components/hotel_detail_modal";
+import {
+  DatePickerModal,
+  formatDateRangeLabel,
+} from "./components/date_picker_modal";
 import { AnimatePresence, motion } from "framer-motion";
 
 interface HomeViewProps {
@@ -18,7 +23,6 @@ type GuestType = "adults" | "children" | "infants";
 
 const TOOLBAR_ITEMS = ["전체", "가성비", "도심", "바다", "수영장", "조식포함"] as const;
 const RECOMMENDED_CITIES = ["서울", "전주", "제주도", "부산"] as const;
-const QUICK_DATE_OPTIONS = ["이번 주말", "다음 주", "이번 달"] as const;
 
 interface SearchSectionProps {
   title: string;
@@ -27,6 +31,7 @@ interface SearchSectionProps {
   onClick: () => void;
   value?: string;
   onChange?: (value: string) => void;
+  readOnly?: boolean;
   isLast?: boolean;
 }
 
@@ -37,16 +42,17 @@ const SearchSection = ({
   onClick,
   value,
   onChange,
+  readOnly = false,
   isLast = false,
 }: SearchSectionProps) => {
-  const containerClass = `flex-1 px-6 py-3 cursor-pointer transition ${active ? "bg-white shadow-lg rounded-full" : "hover:bg-gray-100"} ${isLast ? "mr-1" : ""}`;
+  const containerClass = `flex-1 px-6 py-3 cursor-pointer transition ${active ? "bg-white rounded-full" : "hover:bg-gray-100"} ${isLast ? "mr-1" : ""}`;
 
   if (onChange) {
     return (
       <div onClick={onClick} className={containerClass}>
-        <div className="text-xs font-bold">{title}</div>
+        <div className="text-[10px] font-extrabold uppercase text-gray-900">{title}</div>
         <input
-          className="bg-transparent text-sm outline-none w-full"
+          className="bg-transparent text-sm text-black font-medium outline-none w-full placeholder:text-gray-400"
           placeholder={placeholder}
           value={value}
           onFocus={onClick}
@@ -56,10 +62,25 @@ const SearchSection = ({
     );
   }
 
+  if (readOnly && value !== undefined) {
+    return (
+      <div onClick={onClick} className={containerClass}>
+        <div className="text-[10px] font-extrabold uppercase text-gray-900">{title}</div>
+        <input
+          className="bg-transparent text-sm text-black font-medium outline-none w-full placeholder:text-gray-400 cursor-pointer read-only:cursor-pointer"
+          placeholder={placeholder}
+          value={value}
+          readOnly
+          onFocus={onClick}
+        />
+      </div>
+    );
+  }
+
   return (
     <button type="button" onClick={onClick} className={`${containerClass} text-left`}>
-      <div className="text-xs font-bold">{title}</div>
-      <div className="text-sm text-gray-500">{placeholder}</div>
+      <div className="text-[10px] font-extrabold uppercase text-gray-900">{title}</div>
+      <div className="text-sm text-black font-medium mt-0.5">{placeholder}</div>
     </button>
   );
 };
@@ -71,6 +92,7 @@ export const HomeView = ({ title, description }: HomeViewProps) => {
   const [activeCategory, setActiveCategory] = useState("전체");
   const [activeTab, setActiveTab] = useState<SearchTab>(null);
   const [selectedHotel, setSelectedHotel] = useState<any | null>(null);
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
   const [dateLabel, setDateLabel] = useState("날짜 추가");
   const [adults, setAdults] = useState(1);
   const [children, setChildren] = useState(0);
@@ -198,52 +220,157 @@ export const HomeView = ({ title, description }: HomeViewProps) => {
 
   return (
     <div className="max-w-[2520px] mx-auto xl:px-20 md:px-10 sm:px-2 px-4">
-      <nav className="sticky top-0 z-50 bg-white/95 backdrop-blur-sm border-b border-gray-100 py-4 mb-8">
+      <nav className="sticky top-0 z-50 bg-white/95 backdrop-blur-sm border-b border-gray-100 pt-4 pb-8 mb-4">
         <div className="flex flex-col md:flex-row items-center justify-between gap-6">
           <div className="text-[#0F766E] font-extrabold text-2xl tracking-tighter cursor-pointer">
             Staywise
           </div>
 
           <div ref={searchRef} className="relative w-full max-w-[850px]">
-            <AnimatePresence>
-              {activeTab && (
-                <motion.div
-                  key="search-backdrop"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.2 }}
-                  className="fixed inset-0 z-40 bg-white/20 backdrop-blur-[2px]"
-                />
-              )}
-            </AnimatePresence>
-            <form onSubmit={handleSearch}>
+            <form onSubmit={handleSearch} className="relative">
               <div
-                className={`flex items-center border rounded-full shadow-md transition-all duration-300 ${
-                  activeTab ? "bg-gray-100 border-gray-200" : "bg-white border-gray-200"
+                className={`flex items-center rounded-full border transition-all duration-300 ${
+                  activeTab
+                    ? "bg-white border-gray-200 shadow-xl scale-[1.02]"
+                    : "bg-white border-gray-200"
                 }`}
               >
-                <SearchSection
-                  title="여행지"
-                  placeholder="도시나 명소로 검색"
-                  active={activeTab === "location"}
-                  onClick={() => setActiveTab("location")}
-                  value={searchQuery}
-                  onChange={setSearchQuery}
-                />
-                <SearchSection
-                  title="날짜"
-                  placeholder={dateLabel}
-                  active={activeTab === "date"}
-                  onClick={() => setActiveTab("date")}
-                />
-                <SearchSection
-                  title="여행자"
-                  placeholder={guestLabel}
-                  active={activeTab === "guest"}
-                  onClick={() => setActiveTab("guest")}
-                  isLast
-                />
+                <div className="relative flex-1">
+                  <SearchSection
+                    title="여행지"
+                    placeholder="도시나 명소로 검색"
+                    active={activeTab === "location"}
+                    onClick={() => setActiveTab("location")}
+                    value={searchQuery}
+                    onChange={setSearchQuery}
+                  />
+                  <AnimatePresence>
+                    {activeTab === "location" && (
+                      <motion.div
+                        key="location"
+                        initial={{ opacity: 0, y: -8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -8 }}
+                        transition={{ duration: 0.2 }}
+                        className="absolute top-[calc(100%+12px)] left-0 z-[110] w-full min-w-[320px] max-w-[420px] bg-white rounded-[32px] border border-gray-100 shadow-xl p-6"
+                      >
+                        <div className="text-xs font-bold mb-4">추천 여행지</div>
+                        <div className="grid grid-cols-1 gap-3">
+                          {RECOMMENDED_CITIES.map((city) => (
+                            <button
+                              key={city}
+                              type="button"
+                              onClick={() => {
+                                setSearchQuery(city);
+                                setActiveTab("date");
+                              }}
+                              className="flex items-center gap-3 hover:bg-gray-100 p-2 rounded-xl text-left"
+                            >
+                              <div className="p-2 bg-gray-100 rounded-lg">📍</div>
+                              <span className="text-sm">{city}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+
+                <div className="relative flex-1 overflow-visible">
+                  <SearchSection
+                    title="날짜"
+                    placeholder="날짜 추가"
+                    active={activeTab === "date"}
+                    onClick={() => setActiveTab("date")}
+                    value={dateLabel}
+                    readOnly
+                  />
+                  <AnimatePresence>
+                    {activeTab === "date" && (
+                      <motion.div
+                        key="date"
+                        initial={{ opacity: 0, y: -8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -8 }}
+                        transition={{ duration: 0.2 }}
+                        className="absolute top-[calc(100%+12px)] left-0 z-[110] w-[680px] bg-white rounded-[32px] border border-gray-100 shadow-xl p-6"
+                      >
+                        <DatePickerModal
+                          selectedRange={dateRange}
+                          onSelectRange={(r) => {
+                            setDateRange(r);
+                            setDateLabel(formatDateRangeLabel(r));
+                            if (r?.from && r?.to) setActiveTab("guest");
+                          }}
+                        />
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+
+                <div className="relative flex-1 mr-1">
+                  <SearchSection
+                    title="여행자"
+                    placeholder="게스트 추가"
+                    active={activeTab === "guest"}
+                    onClick={() => setActiveTab("guest")}
+                    value={guestLabel}
+                    readOnly
+                    isLast
+                  />
+                  <AnimatePresence>
+                    {activeTab === "guest" && (
+                      <motion.div
+                        key="guest"
+                        initial={{ opacity: 0, y: -8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -8 }}
+                        transition={{ duration: 0.2 }}
+                        className="absolute top-[calc(100%+12px)] left-0 z-[110] w-full min-w-[320px] max-w-[420px] bg-white rounded-[32px] border border-gray-100 shadow-xl p-6"
+                      >
+                        <div className="text-xs font-bold mb-4">인원 선택</div>
+                        <div className="space-y-3">
+                          {[
+                            { key: "adults", label: "성인", desc: "13세 이상", value: adults },
+                            { key: "children", label: "어린이", desc: "2~12세", value: children },
+                            { key: "infants", label: "유아", desc: "2세 미만", value: infants },
+                          ].map((guest) => (
+                            <div key={guest.key} className="flex items-center justify-between">
+                              <div>
+                                <p className="text-sm font-semibold">{guest.label}</p>
+                                <p className="text-xs text-gray-500">{guest.desc}</p>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <button
+                                  type="button"
+                                  onClick={() => updateGuestCount(guest.key as GuestType, -1)}
+                                  className="h-8 w-8 rounded-full border border-gray-300 text-gray-600 hover:border-[#0F766E] hover:text-[#0F766E]"
+                                >
+                                  -
+                                </button>
+                                <span className="w-4 text-center">{guest.value}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => updateGuestCount(guest.key as GuestType, 1)}
+                                  className="h-8 w-8 rounded-full border border-gray-300 text-gray-600 hover:border-[#0F766E] hover:text-[#0F766E]"
+                                >
+                                  +
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                          <button
+                            type="button"
+                            onClick={() => setActiveTab(null)}
+                            className="w-full mt-2 rounded-xl bg-[#0F766E] text-white py-2 text-sm font-semibold hover:bg-[#115E59]"
+                          >
+                            적용
+                          </button>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
 
                 <div className="pr-2">
                   <button
@@ -260,137 +387,6 @@ export const HomeView = ({ title, description }: HomeViewProps) => {
                 </div>
               </div>
             </form>
-
-            <AnimatePresence mode="wait">
-              {activeTab && (
-                <motion.div
-                  key={activeTab}
-                  layout
-                  initial={{ opacity: 0, y: -10, scale: 0.98 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: -10, scale: 0.98 }}
-                  transition={{ duration: 0.2, ease: "easeOut" }}
-                  className={`absolute top-[calc(100%+12px)] left-0 w-full bg-white rounded-[32px] shadow-2xl border border-gray-100 p-6 z-50 ${
-                    activeTab === "date" ? "max-w-[680px]" : "max-w-[420px]"
-                  }`}
-                >
-                  {activeTab === "location" && (
-                    <>
-                      <div className="text-xs font-bold mb-4">추천 여행지</div>
-                      <div className="grid grid-cols-1 gap-3">
-                        {RECOMMENDED_CITIES.map((city) => (
-                          <button
-                            key={city}
-                            type="button"
-                            onClick={() => {
-                              setSearchQuery(city);
-                              setActiveTab("date");
-                            }}
-                            className="flex items-center gap-3 hover:bg-gray-100 p-2 rounded-xl text-left"
-                          >
-                            <div className="p-2 bg-gray-100 rounded-lg">📍</div>
-                            <span className="text-sm">{city}</span>
-                          </button>
-                        ))}
-                      </div>
-                    </>
-                  )}
-
-                  {activeTab === "date" && (
-                    <>
-                      <div className="text-xs font-bold mb-4">날짜 선택</div>
-                      <div className="grid md:grid-cols-[180px_1fr] gap-4">
-                        <div className="flex flex-col gap-2">
-                          {QUICK_DATE_OPTIONS.map((option) => (
-                            <button
-                              key={option}
-                              type="button"
-                              onClick={() => {
-                                setDateLabel(option);
-                                setActiveTab("guest");
-                              }}
-                              className="rounded-xl border border-gray-200 px-3 py-2 text-sm text-left hover:border-[#0F766E] hover:text-[#0F766E]"
-                            >
-                              {option}
-                            </button>
-                          ))}
-                        </div>
-                        <div className="rounded-2xl border border-gray-200 p-4">
-                          <div className="grid grid-cols-7 gap-2 text-center text-xs text-gray-500 mb-3">
-                            {["일", "월", "화", "수", "목", "금", "토"].map((day) => (
-                              <span key={day}>{day}</span>
-                            ))}
-                          </div>
-                          <div className="grid grid-cols-7 gap-2 text-center text-sm">
-                            {Array.from({ length: 35 }).map((_, index) => {
-                              const day = index - 2;
-                              return (
-                                <button
-                                  key={index}
-                                  type="button"
-                                  className={`h-8 rounded-full ${
-                                    day > 0 && day <= 31
-                                      ? "hover:bg-gray-100 text-gray-700"
-                                      : "text-gray-300 cursor-default"
-                                  }`}
-                                  disabled={!(day > 0 && day <= 31)}
-                                >
-                                  {day > 0 && day <= 31 ? day : ""}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      </div>
-                    </>
-                  )}
-
-                  {activeTab === "guest" && (
-                    <>
-                      <div className="text-xs font-bold mb-4">인원 선택</div>
-                      <div className="space-y-3">
-                        {[
-                          { key: "adults", label: "성인", desc: "13세 이상", value: adults },
-                          { key: "children", label: "어린이", desc: "2~12세", value: children },
-                          { key: "infants", label: "유아", desc: "2세 미만", value: infants },
-                        ].map((guest) => (
-                          <div key={guest.key} className="flex items-center justify-between">
-                            <div>
-                              <p className="text-sm font-semibold">{guest.label}</p>
-                              <p className="text-xs text-gray-500">{guest.desc}</p>
-                            </div>
-                            <div className="flex items-center gap-3">
-                              <button
-                                type="button"
-                                onClick={() => updateGuestCount(guest.key as GuestType, -1)}
-                                className="h-8 w-8 rounded-full border border-gray-300 text-gray-600 hover:border-[#0F766E] hover:text-[#0F766E]"
-                              >
-                                -
-                              </button>
-                              <span className="w-4 text-center">{guest.value}</span>
-                              <button
-                                type="button"
-                                onClick={() => updateGuestCount(guest.key as GuestType, 1)}
-                                className="h-8 w-8 rounded-full border border-gray-300 text-gray-600 hover:border-[#0F766E] hover:text-[#0F766E]"
-                              >
-                                +
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                        <button
-                          type="button"
-                          onClick={() => setActiveTab(null)}
-                          className="w-full mt-2 rounded-xl bg-[#0F766E] text-white py-2 text-sm font-semibold hover:bg-[#115E59]"
-                        >
-                          적용
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </motion.div>
-              )}
-            </AnimatePresence>
           </div>
 
           <div className="hidden md:block w-[100px] text-right">
@@ -405,7 +401,7 @@ export const HomeView = ({ title, description }: HomeViewProps) => {
           </div>
         </div>
 
-        <div className="mt-6 flex items-center gap-8 overflow-x-auto no-scrollbar">
+        <div className="mt-8 pt-4 flex items-center gap-8 overflow-x-auto no-scrollbar">
           {TOOLBAR_ITEMS.map((item) => (
             <button
               key={item}
