@@ -3,6 +3,7 @@
 import { useEffect, useState, use } from "react";
 import { hotelService } from "@/services/hotelService";
 import { Hotel } from "@staywise/shared-types";
+import { getCategoryLabel } from "@/constants/categories";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -40,7 +41,14 @@ export default function HotelDetailPage({ params }: PageProps) {
   return (
     <main className="max-w-[1100px] mx-auto px-6 py-10">
       {/* 타이틀 영역 */}
-      <h1 className="text-3xl font-bold mb-4">{hotel.name}</h1>
+      <div className="flex items-center gap-3 mb-4">
+        <h1 className="text-3xl font-bold">{hotel.name}</h1>
+        {hotel.category && (
+          <span className="text-sm bg-gray-100 px-3 py-1 rounded-full text-gray-700">
+            {getCategoryLabel(hotel.category)}
+          </span>
+        )}
+      </div>
       <p className="text-gray-600 underline mb-6">{hotel.address}</p>
 
       {/* 메인 이미지 */}

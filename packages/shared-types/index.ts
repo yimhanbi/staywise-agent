@@ -17,6 +17,7 @@ export interface Hotel {
   id: string | number;
   name: string;
   address: string;
+  category?: string;
   price_per_night?: number;
   price?: number;
   rating?: number;

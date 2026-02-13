@@ -28,6 +28,8 @@ TYPE_DESCRIPTIONS = {
         "조용한 환경과 안정적인 편의시설을 갖추고 있습니다.",
         "출장이나 단기 체류에 적합한 공간입니다.",
     ],
+    
+    
 }
 
 BASE_DESCRIPTIONS = [
@@ -156,13 +158,22 @@ def get_hotels(
     page: int = Query(1, ge=1),
     limit: int = 20,
     category: str = None,
-    search: str = None
+    search: str = None,
+    location: str = None 
 ):
     """
     숙박 정보 조회
-    - skip: 건너뛸 개수 (페이지네이션)
+    - page: 페이지 번호 (1부터 시작)
     - limit: 최대 조회 개수 (기본 20개)
-    - category: 카테고리 필터 (예: 호텔, 모텔)
+    - category: 카테고리 필터 (한국관광공사 표준 분류 코드)
+      * B02010100: 관광호텔
+      * B02010500: 콘도미니엄(리조트)
+      * B02010700: 펜션
+      * B02010900: 모텔
+      * B02011100: 게스트하우스
+      * B02011600: 한옥
+      * A02030100: 야영장(캠핑)
+    - location: 위치 검색어 (이름 또는 주소)
     - search: 검색어 (이름 또는 주소)
     """
     db = SessionLocal()
@@ -170,16 +181,18 @@ def get_hotels(
     try:
         query = db.query(Hotel)
         
-        # 카테고리 필터
+        # 1. 카테고리 필터링 (한국관광공사 표준 분류 코드로 정확히 매칭)
         if category and category != "전체":
-            query = query.filter(Hotel.category.contains(category))
-        
-        # 검색 필터
-        if search:
-            search_pattern = f"%{search}%"
+            query = query.filter(Hotel.category == category)
+            
+        # 2. 통합 검색 필터 (location 또는 search 파라미터 사용)
+        search_term = location or search
+        if search_term:
+            clean_search = search_term.strip()
+            search_pattern = f"%{clean_search}%"
             query = query.filter(
-                (Hotel.name.like(search_pattern)) | 
-                (Hotel.address.like(search_pattern))
+                (Hotel.name.ilike(search_pattern)) |
+                (Hotel.address.ilike(search_pattern))
             )
         
         # 전체 개수
@@ -258,7 +271,17 @@ def get_hotel_detail(hotel_id: int):
         
         if not hotel:
             raise HTTPException(status_code=404, detail="숙박 정보를 찾을 수 없습니다")
+        
+        # 일관된 랜덤 데이터 생성 (seed 사용)
         stay_info = generate_random_stay_info(seed=hotel.id)
+        copy = generate_copy()
+        
+        # 가격 생성 (리스트와 동일한 로직)
+        random.seed(hotel.id)
+        price = random.randrange(50000, 550000, 10000)
+        rating = round(random.uniform(3.8, 5.0), 2)
+        reviews = random.randint(10, 300)
+        
         return {
             "id": hotel.id,
             "name": hotel.name,
@@ -268,12 +291,19 @@ def get_hotel_detail(hotel_id: int):
             "homepage": hotel.homepage,
             "latitude": hotel.latitude,
             "longitude": hotel.longitude,
-            "description": hotel.description,
+            "description": copy["description"],
             "content_id": hotel.content_id,
+            "imageUrl": f"https://loremflickr.com/800/600/mansion,villa,hotel/all?lock={hotel.id}",
+            "price": price,
+            "price_per_night": price,
+            "rating": rating,
+            "reviews": reviews,
             "max_guests": stay_info["max_guests"],
             "bedrooms": stay_info["bedrooms"],
             "beds": stay_info["beds"],
             "bathrooms": stay_info["bathrooms"],
+            "badges": copy["badges"],
+            "urgency_message": copy["urgency"],
         }
         
     finally:

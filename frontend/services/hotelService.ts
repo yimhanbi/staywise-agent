@@ -16,7 +16,7 @@ export const hotelService = {
     const query = new URLSearchParams();
 
     if (normalizedParams.location) {
-      query.append("search", normalizedParams.location);
+      query.append("location", normalizedParams.location);
     }
     if (normalizedParams.category && normalizedParams.category !== "전체") {
       query.append("category", normalizedParams.category);

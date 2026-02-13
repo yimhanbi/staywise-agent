@@ -9,6 +9,18 @@ interface HotelDetailModalProps {
 
 export const HotelDetailModal = ({ hotel, isOpen, onClose }: HotelDetailModalProps) => {
   const hotelIdNum = Number(hotel?.id) || 0;
+  
+  const generateRandomHostName = (id: number) => {
+    const firstNames = ["지민", "서준", "민서", "하준", "지우", "도윤", "서연", "예준", "수아", "시우", "하은", "지호", "채원", "준서", "윤서"];
+    const lastNames = ["김", "이", "박", "최", "정", "강", "조", "윤", "장", "임"];
+    
+    const firstIndex = (id * 7) % firstNames.length;
+    const lastIndex = (id * 3) % lastNames.length;
+    
+    return `${lastNames[lastIndex]}${firstNames[firstIndex]}`;
+  };
+  
+  const hostName = hotel ? generateRandomHostName(hotelIdNum) : "StayWise AI";
 
   return (
     <AnimatePresence>
@@ -113,10 +125,10 @@ export const HotelDetailModal = ({ hotel, isOpen, onClose }: HotelDetailModalPro
 
                   <div className="flex items-center gap-4 py-6 border-b border-gray-100">
                     <div className="w-12 h-12 bg-[#2D6A6A] rounded-full flex items-center justify-center text-white font-bold text-sm">
-                      AI
+                      {hostName.charAt(0)}
                     </div>
                     <div className="flex flex-col">
-                      <h4 className="text-lg font-bold text-black">StayWise AI님이 호스팅하는 숙소</h4>
+                      <h4 className="text-lg font-bold text-black">{hostName}님이 호스팅하는 숙소</h4>
                       <p className="text-sm text-gray-600">
                         최대 인원 {hotel.max_guests ?? 4}명 · 침실 {hotel.bedrooms ?? 2}개 · 침대 {hotel.beds ?? 2}개 · 욕실 {hotel.bathrooms ?? 1}개
                       </p>
