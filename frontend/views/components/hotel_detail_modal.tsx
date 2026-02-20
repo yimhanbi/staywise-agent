@@ -1,5 +1,6 @@
 import type { MouseEvent } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import KakaoMap from "@/components/KakaoMap";
 
 interface HotelDetailModalProps {
   hotel: any | null;
@@ -9,8 +10,17 @@ interface HotelDetailModalProps {
 
 export const HotelDetailModal = ({ hotel, isOpen, onClose }: HotelDetailModalProps) => {
   const hotelIdNum = Number(hotel?.id) || 0;
+  const latitude = Number(hotel?.latitude ?? hotel?.mapy);
+  const longitude = Number(hotel?.longitude ?? hotel?.mapx);
+  const hasValidLocation = Number.isFinite(latitude) && Number.isFinite(longitude);
+
+  if (isOpen && hotel) {
+    console.log("현재 숙소 데이터: ",hotel);
+    console.log("좌표 체크: ", hotel.mapx, hotel.mapy);
+  }
   
-  const generateRandomHostName = (id: number) => {
+
+  function generateRandomHostName(id: number) {
     const firstNames = ["지민", "서준", "민서", "하준", "지우", "도윤", "서연", "예준", "수아", "시우", "하은", "지호", "채원", "준서", "윤서"];
     const lastNames = ["김", "이", "박", "최", "정", "강", "조", "윤", "장", "임"];
     
@@ -18,7 +28,7 @@ export const HotelDetailModal = ({ hotel, isOpen, onClose }: HotelDetailModalPro
     const lastIndex = (id * 3) % lastNames.length;
     
     return `${lastNames[lastIndex]}${firstNames[firstIndex]}`;
-  };
+  }
   
   const hostName = hotel ? generateRandomHostName(hotelIdNum) : "StayWise AI";
 
@@ -146,6 +156,39 @@ export const HotelDetailModal = ({ hotel, isOpen, onClose }: HotelDetailModalPro
                       🔥 {hotel.urgency || hotel.urgency_message}
                     </p>
                   )}
+
+                  <hr className="border-gray-100" />
+
+                  <div className="py-8">
+                    <h3 className="text-2xl font-bold text-gray-900 mb-6">호스팅 지역</h3>
+                    <div className="w-full h-[400px] md:h-[480px] rounded-2xl overflow-hidden shadow-inner border border-gray-100 relative bg-gray-50">
+                      {hasValidLocation ? (
+                        <KakaoMap
+                          latitude={latitude}
+                          longitude={longitude}
+                          hotelName={hotel.name}
+                        />
+                      ) : hotel.address ? (
+                        <KakaoMap
+                          address={hotel.address}
+                          hotelName={hotel.name}
+                        />
+                      ) : (
+                        <div className="flex flex-col items-center justify-center h-full text-gray-400">
+                          <span className="text-4xl mb-2">📍</span>
+                          <p className="font-medium">위치 정보를 불러올 수 없습니다.</p>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="mt-6">
+                      <h4 className="text-lg font-bold text-gray-900">{hotel.address}</h4>
+                      <p className="text-gray-600 mt-2 leading-relaxed">
+                        이 숙소는 주변 경관이 아름답고 이동이 편리한 곳에 위치해 있습니다.
+                        상세한 위치 정보는 예약 확정 후에 제공됩니다.
+                      </p>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="flex-1">
