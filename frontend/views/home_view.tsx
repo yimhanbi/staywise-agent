@@ -102,11 +102,8 @@ export const HomeView = ({ title, description }: HomeViewProps) => {
     }
   }, [page]); // searchQuery나 category는 handleSearch/handleCategoryClick에서 관리하므로 의존성에서 제외
 
-  const handleSearch = (searchValue?: string) => {
-    const nextQuery = (searchValue ?? searchQuery).trim();
-    if (typeof searchValue === "string" && searchValue !== searchQuery) {
-      setSearchQuery(searchValue);
-    }
+  const handleSearch = (_params: { checkIn?: string; checkOut?: string; adults: number; children: number }) => {
+    const nextQuery = searchQuery.trim();
     setPage(1); // 페이지 초기화
     setHotels([]); // 기존 데이터 비우기
     fetchLoadHotels(nextQuery || undefined, activeCategory, 1);

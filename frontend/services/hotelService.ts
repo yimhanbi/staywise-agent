@@ -22,6 +22,24 @@ export const hotelService = {
       query.append("category", normalizedParams.category);
     }
 
+
+    // 날짜 및 인원 파라미터 추가
+    if (normalizedParams.checkIn) {
+      query.append("check_in", normalizedParams.checkIn);
+    }
+    if (params.checkOut) {
+      query.append("check_out",String(normalizedParams.checkOut));
+    }
+
+    const adults = normalizedParams.adults ?? 0;
+    const children = normalizedParams.children ?? 0;
+    const totalGuests = adults + children;
+
+    if (totalGuests > 0) {
+      query.append("guests", totalGuests.toString());
+    }
+
+    // 페이지네이션 로직
     const pageCandidate = (params as SearchParamsInput & { page?: number }).page;
     const page =
       typeof pageCandidate === "number" && Number.isFinite(pageCandidate) && pageCandidate > 0

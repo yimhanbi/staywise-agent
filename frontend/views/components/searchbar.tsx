@@ -13,7 +13,7 @@ const RECOMMENDED_CITIES = ["서울", "전주", "제주도", "부산"] as const;
 interface SearchBarProps {
   searchQuery: string;
   onSearchQueryChange: (value: string) => void;
-  onSearch: () => void;
+  onSearch: (params: { checkIn?: string; checkOut?: string; adults: number; children: number }) => void;
 }
 
 interface SearchSectionProps {
@@ -93,8 +93,6 @@ export const SearchBar = ({ searchQuery, onSearchQueryChange, onSearch }: Search
       }
     };
 
-    document.addEventListener
-
     const handleEsc = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setActiveTab(null);
@@ -126,7 +124,16 @@ export const SearchBar = ({ searchQuery, onSearchQueryChange, onSearch }: Search
 
   const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    onSearch();
+    // 날짜를 YYYY-MM-DD 형식으로 변환
+    const params = {
+      checkIn: dateRange?.from ? dateRange.from.toISOString().split("T")[0] : undefined,
+      checkOut: dateRange?.to ? dateRange.to.toISOString().split("T")[0] : undefined,
+      adults,
+      children,
+    };
+
+    onSearch(params);
+    setActiveTab(null);
   };
 
   return (
