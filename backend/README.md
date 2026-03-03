@@ -21,3 +21,27 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 DB는 프로젝트 루트에서 `docker compose up -d` 후 `.env`에 `DATABASE_URL` 설정.
+
+## MCP 서버 (Week 1 MVP)
+
+기존 FastAPI를 래핑하는 MCP 서버 엔트리포인트가 추가되어 있습니다.
+
+- 파일: `backend/mcp_server.py`
+- 제공 Tool:
+  - `health_check`
+  - `search_hotels`
+  - `get_hotel_detail`
+
+### 실행
+
+```bash
+cd backend
+source .venv/bin/activate
+pip install -r requirements.txt
+python mcp_server.py
+```
+
+### 환경 변수
+
+- `MCP_BACKEND_API_BASE_URL` (기본값: `http://localhost:8000/api`)
+- `MCP_UPSTREAM_TIMEOUT_SECONDS` (기본값: `5`)

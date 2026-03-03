@@ -124,14 +124,20 @@ export const SearchBar = ({ searchQuery, onSearchQueryChange, onSearch }: Search
 
   const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+<<<<<<< HEAD
     // 날짜를 YYYY-MM-DD 형식으로 변환
+=======
+>>>>>>> e0da9fd (feat: mcp server 로직 추가)
     const params = {
       checkIn: dateRange?.from ? dateRange.from.toISOString().split("T")[0] : undefined,
       checkOut: dateRange?.to ? dateRange.to.toISOString().split("T")[0] : undefined,
       adults,
       children,
     };
+<<<<<<< HEAD
 
+=======
+>>>>>>> e0da9fd (feat: mcp server 로직 추가)
     onSearch(params);
     setActiveTab(null);
   };

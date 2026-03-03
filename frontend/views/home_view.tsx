@@ -14,11 +14,22 @@ interface HomeViewProps {
   description: string;
 }
 
+interface SearchFilters {
+  checkIn?: string;
+  checkOut?: string;
+  adults: number;
+  children: number;
+}
+
 export const HomeView = ({ title, description }: HomeViewProps) => {
   const [hotels, setHotels] = useState<Hotel[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState("전체");
+  const [searchFilters, setSearchFilters] = useState<SearchFilters>({
+    adults: 1,
+    children: 0,
+  });
   const [selectedHotel, setSelectedHotel] = useState<any | null>(null);
 
 
@@ -45,7 +56,12 @@ export const HomeView = ({ title, description }: HomeViewProps) => {
 
 
 
-  const fetchLoadHotels = useCallback(async (q?: string, category?: string, pageNum: number = 1) => {
+  const fetchLoadHotels = useCallback(async (
+    q?: string,
+    category?: string,
+    pageNum: number = 1,
+    filters: SearchFilters = { adults: 1, children: 0 },
+  ) => {
     setIsLoading(true);
     try {
       // 카테고리 label을 백엔드 value로 변환
@@ -54,6 +70,10 @@ export const HomeView = ({ title, description }: HomeViewProps) => {
       const data = await hotelService.fetchHotels({
         location: q,
         category: categoryValue,
+        checkIn: filters.checkIn,
+        checkOut: filters.checkOut,
+        adults: filters.adults,
+        children: filters.children,
         page: pageNum,
       });
 
@@ -98,30 +118,44 @@ export const HomeView = ({ title, description }: HomeViewProps) => {
   // 2. 페이지 번호가 바뀔 때만 추가 데이터 로드 (page 2 이상부터)
   useEffect(() => {
     if (page > 1) {
-      fetchLoadHotels(searchQuery.trim() || undefined, activeCategory, page);
+      fetchLoadHotels(searchQuery.trim() || undefined, activeCategory, page, searchFilters);
     }
   }, [page]); // searchQuery나 category는 handleSearch/handleCategoryClick에서 관리하므로 의존성에서 제외
 
+<<<<<<< HEAD
   const handleSearch = (_params: { checkIn?: string; checkOut?: string; adults: number; children: number }) => {
     const nextQuery = searchQuery.trim();
+=======
+  const handleSearch = (params: { checkIn?: string; checkOut?: string; adults: number; children: number }) => {
+    const nextQuery = searchQuery.trim();
+    const nextFilters: SearchFilters = {
+      checkIn: params.checkIn,
+      checkOut: params.checkOut,
+      adults: params.adults,
+      children: params.children,
+    };
+    setSearchFilters(nextFilters);
+>>>>>>> e0da9fd (feat: mcp server 로직 추가)
     setPage(1); // 페이지 초기화
     setHotels([]); // 기존 데이터 비우기
-    fetchLoadHotels(nextQuery || undefined, activeCategory, 1);
+    fetchLoadHotels(nextQuery || undefined, activeCategory, 1, nextFilters);
   };
 
   const handleCategoryClick = (item: string) => {
     setActiveCategory(item);
     setPage(1); // 페이지 초기화
     setHotels([]); // 기존 데이터 비우기
-    fetchLoadHotels(searchQuery.trim() || undefined, item, 1);
+    fetchLoadHotels(searchQuery.trim() || undefined, item, 1, searchFilters);
   };
 
   const handleLogoClick = () => {
+    const resetFilters: SearchFilters = { adults: 1, children: 0 };
     setSearchQuery("");
     setActiveCategory("전체");
+    setSearchFilters(resetFilters);
     setPage(1);
     setHotels([]);
-    fetchLoadHotels(undefined, "전체", 1);
+    fetchLoadHotels(undefined, "전체", 1, resetFilters);
   };
 
   const handleHotelCardClick = (hotel: any) => {
