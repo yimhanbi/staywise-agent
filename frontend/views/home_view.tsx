@@ -122,10 +122,6 @@ export const HomeView = ({ title, description }: HomeViewProps) => {
     }
   }, [page]); // searchQuery나 category는 handleSearch/handleCategoryClick에서 관리하므로 의존성에서 제외
 
-<<<<<<< HEAD
-  const handleSearch = (_params: { checkIn?: string; checkOut?: string; adults: number; children: number }) => {
-    const nextQuery = searchQuery.trim();
-=======
   const handleSearch = (params: { checkIn?: string; checkOut?: string; adults: number; children: number }) => {
     const nextQuery = searchQuery.trim();
     const nextFilters: SearchFilters = {
@@ -135,7 +131,6 @@ export const HomeView = ({ title, description }: HomeViewProps) => {
       children: params.children,
     };
     setSearchFilters(nextFilters);
->>>>>>> e0da9fd (feat: mcp server 로직 추가)
     setPage(1); // 페이지 초기화
     setHotels([]); // 기존 데이터 비우기
     fetchLoadHotels(nextQuery || undefined, activeCategory, 1, nextFilters);
