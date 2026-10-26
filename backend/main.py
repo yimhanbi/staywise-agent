@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, ForeignKey
 from sqlalchemy.orm import sessionmaker
 from dotenv import load_dotenv
 import asyncio
@@ -38,6 +38,7 @@ class AiChatTurn(BaseModel):
 
 class AiChatRequest(BaseModel):
     messages: list[AiChatTurn] = Field(max_length=16)
+    conversation_id: Optional[str] = None
 
 
 class BookingCreateRequest(BaseModel):
@@ -204,6 +205,46 @@ async def ai_chat(payload: AiChatRequest):
     if payload.messages and payload.messages[-1].role != "user":
         raise HTTPException(status_code=400, detail="마지막 대화는 사용자 메시지여야 합니다.")
 
+    try:
+        conversation_id = str(uuid.UUID(payload.conversation_id)) if payload.conversation_id else str(uuid.uuid4())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="대화 ID가 올바르지 않습니다.") from exc
+
+    db = SessionLocal()
+    try:
+        conversation_record = db.query(AiConversation).filter(AiConversation.id == conversation_id).first()
+        if conversation_record is None:
+            conversation_record = AiConversation(id=conversation_id, title="새 대화")
+            db.add(conversation_record)
+            db.flush()
+
+        stored_messages = (
+            db.query(AiConversationMessage)
+            .filter(AiConversationMessage.conversation_id == conversation_id)
+            .order_by(AiConversationMessage.id.asc())
+            .all()
+        )
+        history = [{"role": item.role, "content": item.content} for item in stored_messages]
+        if payload.messages:
+            latest_user_message = payload.messages[-1].content
+            db.add(AiConversationMessage(
+                conversation_id=conversation_id,
+                role="user",
+                content=latest_user_message,
+            ))
+            if conversation_record.title == "새 대화":
+                conversation_record.title = latest_user_message.strip()[:120] or "새 대화"
+            history.append({"role": "user", "content": latest_user_message})
+        conversation_record.updated_at = datetime.utcnow()
+        db.commit()
+        history = history[-16:]
+    except Exception as exc:
+        db.rollback()
+        logger.exception("Could not load or store AI conversation: id=%s", conversation_id)
+        raise HTTPException(status_code=500, detail="대화 기록을 저장하지 못했습니다.") from exc
+    finally:
+        db.close()
+
     async def stream_chat():
         loop = asyncio.get_running_loop()
         progress_queue: asyncio.Queue[tuple[str, dict]] = asyncio.Queue()
@@ -224,11 +265,11 @@ async def ai_chat(payload: AiChatRequest):
         def sse_event(event: str, payload: dict) -> str:
             return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
-        logger.info("AI chat started: turns=%d", len(payload.messages))
+        logger.info("AI chat started: id=%s turns=%d", conversation_id, len(history))
         notify_progress("대화 요청을 처리하고 있어요…")
         task = asyncio.create_task(
             run_agent(
-                [message.model_dump() for message in payload.messages],
+                history,
                 call_mcp_api,
                 on_progress=notify_progress,
                 on_token=notify_token,
@@ -244,7 +285,28 @@ async def ai_chat(payload: AiChatRequest):
                     yield sse_event("progress", {"message": "모델 응답을 기다리고 있어요…"})
 
             result = await task
-            logger.info("AI chat completed: hotels=%d", len(result.get("hotels", [])))
+            result["conversation_id"] = conversation_id
+            db = SessionLocal()
+            try:
+                conversation_record = db.query(AiConversation).filter(AiConversation.id == conversation_id).first()
+                if conversation_record is None:
+                    raise RuntimeError("대화 세션을 저장하는 중 찾을 수 없습니다.")
+                stored_metadata = {
+                    "hotels": result.get("hotels", []),
+                    "total": result.get("total", 0),
+                    "search": result.get("search"),
+                }
+                db.add(AiConversationMessage(
+                    conversation_id=conversation_id,
+                    role="assistant",
+                    content=result.get("reply", ""),
+                    metadata_json=json.dumps(stored_metadata, ensure_ascii=False),
+                ))
+                conversation_record.updated_at = datetime.utcnow()
+                db.commit()
+            finally:
+                db.close()
+            logger.info("AI chat completed: id=%s hotels=%d", conversation_id, len(result.get("hotels", [])))
             yield sse_event("result", result)
         except RuntimeError as exc:
             logger.error("AI chat dependency error: %s", exc)
@@ -376,7 +438,7 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # 데이터베이스 모델 import (sync_data.py와 동일한 구조)
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy import Column, Integer, String, Float, Text
+from sqlalchemy import Column, Integer, String, Float, Text, DateTime
 
 Base = declarative_base()
 
@@ -412,6 +474,26 @@ class Booking(Base):
     created_at = Column(String(32), nullable=False, default=lambda: datetime.utcnow().isoformat())
 
 
+class AiConversation(Base):
+    __tablename__ = "ai_conversations"
+
+    id = Column(String(36), primary_key=True)
+    title = Column(String(120), nullable=False, default="새 대화")
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)
+
+
+class AiConversationMessage(Base):
+    __tablename__ = "ai_conversation_messages"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    conversation_id = Column(String(36), ForeignKey("ai_conversations.id", ondelete="CASCADE"), nullable=False, index=True)
+    role = Column(String(16), nullable=False)
+    content = Column(Text, nullable=False)
+    metadata_json = Column(Text, nullable=False, default="{}")
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
 # 테이블이 없으면 생성 (앱 시작 시 한 번)
 try:
     Base.metadata.create_all(bind=engine)
@@ -429,6 +511,66 @@ def read_root():
         "version": "1.0.0",
         "status": "running"
     }
+
+
+@app.get("/api/ai/conversations")
+def list_ai_conversations(limit: int = Query(20, ge=1, le=100)):
+    db = SessionLocal()
+    try:
+        conversations = (
+            db.query(AiConversation)
+            .order_by(AiConversation.updated_at.desc())
+            .limit(limit)
+            .all()
+        )
+        return {
+            "conversations": [
+                {
+                    "id": item.id,
+                    "title": item.title,
+                    "updated_at": item.updated_at.isoformat(),
+                }
+                for item in conversations
+            ]
+        }
+    finally:
+        db.close()
+
+
+@app.get("/api/ai/conversations/{conversation_id}")
+def get_ai_conversation(conversation_id: str):
+    try:
+        conversation_id = str(uuid.UUID(conversation_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="대화 ID가 올바르지 않습니다.") from exc
+
+    db = SessionLocal()
+    try:
+        conversation = db.query(AiConversation).filter(AiConversation.id == conversation_id).first()
+        if not conversation:
+            raise HTTPException(status_code=404, detail="저장된 대화를 찾을 수 없습니다.")
+        messages = (
+            db.query(AiConversationMessage)
+            .filter(AiConversationMessage.conversation_id == conversation_id)
+            .order_by(AiConversationMessage.id.asc())
+            .all()
+        )
+        return {
+            "id": conversation.id,
+            "title": conversation.title,
+            "messages": [
+                {
+                    "id": message.id,
+                    "role": message.role,
+                    "content": message.content,
+                    "metadata": json.loads(message.metadata_json or "{}"),
+                    "created_at": message.created_at.isoformat(),
+                }
+                for message in messages
+            ],
+        }
+    finally:
+        db.close()
 
 @app.get("/api/hotels")
 def get_hotels(

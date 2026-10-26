@@ -17,7 +17,26 @@ export interface AiChatResponse {
   reply: string;
   hotels: Hotel[];
   total: number;
+  conversation_id?: string;
   search?: { location?: string; category?: string; guests?: number; check_in?: string; check_out?: string } | null;
+}
+
+export interface AiConversationSummary {
+  id: string;
+  title: string;
+  updated_at: string;
+}
+
+export interface AiStoredMessage {
+  id: number;
+  role: "user" | "assistant";
+  content: string;
+  metadata?: {
+    hotels?: Hotel[];
+    total?: number;
+    search?: AiChatResponse["search"];
+  };
+  created_at: string;
 }
 
 export type AiChatStreamEvent =
@@ -40,6 +59,7 @@ export const hotelService = {
   async sendAiMessage(
     messages: AiChatTurn[],
     onEvent?: (event: AiChatStreamEvent) => void,
+    conversationId?: string,
   ): Promise<AiChatResponse> {
     const url = buildApiUrl("/ai/chat");
     let response: Response;
@@ -47,7 +67,7 @@ export const hotelService = {
       response = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages }),
+        body: JSON.stringify({ messages, conversation_id: conversationId }),
       });
     } catch (error) {
       throw new Error(`AI 대화 서버에 연결할 수 없습니다. [${url}]`, {
@@ -108,6 +128,22 @@ export const hotelService = {
     if (streamError) throw new Error(streamError);
     if (!result) throw new Error("AI 응답 스트림이 결과 없이 종료됐습니다.");
     return result;
+  },
+
+  async listAiConversations(): Promise<AiConversationSummary[]> {
+    const response = await fetch(buildApiUrl("/ai/conversations"));
+    if (!response.ok) throw new Error("대화 기록 목록을 불러오지 못했습니다.");
+    const body = (await response.json()) as { conversations: AiConversationSummary[] };
+    return body.conversations;
+  },
+
+  async getAiConversation(id: string): Promise<{ id: string; title: string; messages: AiStoredMessage[] }> {
+    const response = await fetch(buildApiUrl(`/ai/conversations/${encodeURIComponent(id)}`));
+    if (!response.ok) {
+      if (response.status === 404) throw new Error("저장된 대화를 찾을 수 없습니다.");
+      throw new Error("대화 기록을 불러오지 못했습니다.");
+    }
+    return response.json();
   },
 
   async fetchHotels(
