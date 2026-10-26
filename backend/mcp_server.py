@@ -6,9 +6,10 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime
-from typing import Any
+from typing import Annotated, Any
 from uuid import uuid4
 
+from pydantic import Field
 from mcp.server.fastmcp import FastMCP
 
 mcp = FastMCP("staywise-mcp")
@@ -96,12 +97,12 @@ def health_check() -> dict[str, Any]:
 
 @mcp.tool()
 def search_hotels(
-    location: str | None = None,
-    check_in: str | None = None,
-    check_out: str | None = None,
-    guests: int | None = None,
-    category: str | None = None,
-    page: int = 1,
+    location: Annotated[str | None, Field(description="여행지 또는 지역명, 예: 부산, 전주")] = None,
+    check_in: Annotated[str | None, Field(description="체크인 날짜 YYYY-MM-DD")] = None,
+    check_out: Annotated[str | None, Field(description="체크아웃 날짜 YYYY-MM-DD")] = None,
+    guests: Annotated[int | None, Field(ge=1, description="투숙 인원")] = None,
+    category: Annotated[str | None, Field(description="공식 숙소 분류 코드 또는 한글 유형명. 전체 검색이면 생략")] = None,
+    page: Annotated[int, Field(ge=1, description="결과 페이지 번호")] = 1,
 ) -> dict[str, Any]:
     """Search the hotel catalogue by location and category with pagination.
 
@@ -177,7 +178,9 @@ def search_hotels(
 
 
 @mcp.tool()
-def get_hotel_detail(hotel_id: int) -> dict[str, Any]:
+def get_hotel_detail(
+    hotel_id: Annotated[int, Field(ge=1, description="검색 결과에 나온 숙소 ID")],
+) -> dict[str, Any]:
     """Get the details for one hotel by its numeric ID."""
     if hotel_id < 1:
         return make_error(

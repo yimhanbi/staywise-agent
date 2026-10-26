@@ -150,6 +150,13 @@ export const hotelService = {
     params: SearchParamsInput = {},
   ): Promise<HotelListResponse> {
     const normalizedParams = SearchParamsSchema.parse(params);
+    if (
+      normalizedParams.checkIn &&
+      normalizedParams.checkOut &&
+      normalizedParams.checkOut <= normalizedParams.checkIn
+    ) {
+      throw new Error("체크아웃 날짜는 체크인 날짜보다 뒤여야 합니다.");
+    }
     const adults = normalizedParams.adults ?? 0;
     const children = normalizedParams.children ?? 0;
     const guests = adults + children;

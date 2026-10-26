@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from sqlalchemy import create_engine, Column, Integer, String, Float, Text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+from category_mapping import infer_category_from_name
 
 # .env 파일에서 환경 변수 불러오기
 load_dotenv()
@@ -90,20 +91,25 @@ def fetch_accommodation_data(page_no=1, num_of_rows=100):
 
 # 데이터 저장 함수
 def save_hotels_to_db(hotels_data):
-    """받아온 숙박 데이터를 DB에 저장"""
+    """받아온 숙박 데이터를 저장하고 기존 데이터의 누락 분류도 보완"""
     saved_count = 0
+    updated_count = 0
     
     for item in hotels_data:
         content_id = item.get("contentid")
         
         existing = session.query(Hotel).filter_by(content_id=str(content_id)).first()
+        category = (item.get("cat3") or "").strip() or infer_category_from_name(item.get("title"))
         if existing:
+            if not (existing.category or "").strip() and category:
+                existing.category = category
+                updated_count += 1
             continue
         
         hotel = Hotel(
             name=item.get("title", "정보 없음"),
             address=item.get("addr1", "") + " " + item.get("addr2", "").strip(),
-            category=item.get("cat3", "기타"),
+            category=category or "",
             phone=item.get("tel", ""),
             homepage=item.get("homepage", ""),
             latitude=float(item.get("mapy", 0)) if item.get("mapy") else None,
@@ -115,9 +121,9 @@ def save_hotels_to_db(hotels_data):
         session.add(hotel)
         saved_count += 1
     
-    if saved_count > 0:
+    if saved_count > 0 or updated_count > 0:
         session.commit()
-        print(f"✅ {saved_count}개의 새 숙박 정보 저장 완료!")
+        print(f"✅ 새 숙박 {saved_count}개 저장, 기존 숙박 {updated_count}개 분류 보완 완료!")
     else:
         print("ℹ️ 새로 저장할 데이터가 없습니다.")
     

@@ -1,4 +1,4 @@
-"""Ollama chat orchestration with an allowlisted set of Staywise MCP tools."""
+"""Ollama chat orchestration using tools discovered from the Staywise MCP server."""
 
 from __future__ import annotations
 
@@ -26,46 +26,58 @@ SYSTEM_PROMPT = """너는 Staywise의 한국어 숙소 검색 도우미다.
 예약과 결제는 검색 결과 카드의 예약 버튼을 통해 체크아웃 화면에서 진행한다. 예약/결제 버튼을 누르거나 결제가 승인되었다고 말하지 않는다. 실제 날짜별 객실 재고는 확인할 수 없으므로 예약 가능 여부를 보장하지 않는다. 사용자가 예약을 원하면 적합한 검색 결과의 예약하기 버튼을 안내한다.
 자연스럽고 간결한 한국어로 답한다. 대화 이력이 비어 있으면 Staywise AI임을 짧게 소개하고 여행 조건을 자유롭게 말해 달라고 인사한다."""
 
-TOOLS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "search_hotels",
-            "description": "Staywise 숙소 목록에서 여행지, 숙소 유형, 날짜, 인원 조건으로 검색합니다. 객실 예약 가능 여부는 확인하지 않습니다.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "location": {"type": "string", "description": "여행지 또는 지역명"},
-                    "check_in": {"type": "string", "description": "체크인 날짜 YYYY-MM-DD"},
-                    "check_out": {"type": "string", "description": "체크아웃 날짜 YYYY-MM-DD"},
-                    "guests": {"type": "integer", "minimum": 1, "description": "투숙 인원"},
-                    "category": {
-                        "type": "string",
-                        "description": "숙소 분류 코드: 호텔 B02010100, 리조트 B02010500, 펜션 B02010700, 모텔 B02010900, 게스트하우스 B02011100, 한옥 B02011600, 캠핑 A02030100. 전체 유형 검색이면 생략.",
-                    },
-                    "page": {"type": "integer", "minimum": 1, "description": "결과 페이지, 기본 1"},
-                },
+def _ollama_schema(schema: Any) -> dict[str, Any]:
+    """Convert an MCP JSON Schema object to Ollama's function parameter schema."""
+    if not isinstance(schema, dict):
+        return {"type": "object", "properties": {}}
+
+    alternatives = schema.get("anyOf") or schema.get("oneOf")
+    if isinstance(alternatives, list):
+        non_null = [item for item in alternatives if isinstance(item, dict) and item.get("type") != "null"]
+        if len(non_null) == 1:
+            schema = {**non_null[0], **{key: value for key, value in schema.items() if key not in {"anyOf", "oneOf"}}}
+
+    result: dict[str, Any] = {}
+    for key in ("type", "description", "enum", "minimum", "maximum", "minLength", "maxLength", "pattern"):
+        if key in schema:
+            result[key] = schema[key]
+    if isinstance(schema.get("properties"), dict):
+        result["properties"] = {
+            name: _ollama_schema(property_schema)
+            for name, property_schema in schema["properties"].items()
+        }
+    if isinstance(schema.get("items"), dict):
+        result["items"] = _ollama_schema(schema["items"])
+    if isinstance(schema.get("required"), list):
+        result["required"] = schema["required"]
+    if result.get("type") == "object" or "properties" in result:
+        result.setdefault("type", "object")
+        result.setdefault("properties", {})
+    return result
+
+
+def _ollama_tools(mcp_tools: list[Any]) -> list[dict[str, Any]]:
+    """Build Ollama function definitions directly from MCP tools/list results."""
+    tools = []
+    for tool in mcp_tools:
+        name = getattr(tool, "name", None)
+        if not name:
+            continue
+        tools.append({
+            "type": "function",
+            "function": {
+                "name": name,
+                "description": getattr(tool, "description", None) or f"MCP 도구 {name}",
+                "parameters": _ollama_schema(getattr(tool, "inputSchema", None)),
             },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_hotel_detail",
-            "description": "숙소 ID로 Staywise 숙소 상세 정보를 조회합니다. 검색 결과에 나온 숙소 ID만 사용합니다.",
-            "parameters": {
-                "type": "object",
-                "properties": {"hotel_id": {"type": "integer", "minimum": 1}},
-                "required": ["hotel_id"],
-            },
-        },
-    },
-]
+        })
+    return tools
 
 
 def _ollama_request(
     messages: list[dict[str, Any]],
     *,
+    tools: list[dict[str, Any]],
     allow_tools: bool = True,
     on_progress: ProgressCallback | None = None,
     on_token: TokenCallback | None = None,
@@ -77,7 +89,7 @@ def _ollama_request(
             "model": model,
             "messages": messages,
             "stream": True,
-            **({"tools": TOOLS} if allow_tools else {}),
+            **({"tools": tools} if allow_tools and tools else {}),
         },
         ensure_ascii=False,
     ).encode("utf-8")
@@ -224,6 +236,9 @@ def _search_fallback_from_history(history: list[dict[str, str]]) -> dict[str, An
     category_codes = {
         "한옥": "B02011600",
         "게스트하우스": "B02011100",
+        "유스호스텔": "B02010600",
+        "호스텔": "B02011000",
+        "민박": "B02011200",
         "캠핑": "A02030100",
         "야영장": "A02030100",
         "모텔": "B02010900",
@@ -272,12 +287,16 @@ def _search_fallback_from_history(history: list[dict[str, str]]) -> dict[str, An
 async def run_agent(
     history: list[dict[str, str]],
     call_tool: CallTool,
+    mcp_tools: list[Any],
     on_progress: ProgressCallback | None = None,
     on_token: TokenCallback | None = None,
     on_reset: Callable[[], None] | None = None,
 ) -> dict[str, Any]:
     messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
     messages.extend(history)
+    ollama_tools = _ollama_tools(mcp_tools)
+    available_tool_names = {item["function"]["name"] for item in ollama_tools}
+    logger.info("MCP tools discovered: names=%s", sorted(available_tool_names))
     latest_search: dict[str, Any] | None = None
     fallback_search_done = False
 
@@ -286,6 +305,7 @@ async def run_agent(
         response = await asyncio.to_thread(
             _ollama_request,
             messages,
+            tools=ollama_tools,
             on_progress=on_progress,
             on_token=on_token,
         )
@@ -298,7 +318,7 @@ async def run_agent(
                 if not fallback_search_done
                 else None
             )
-            if fallback_arguments is not None:
+            if fallback_arguments is not None and "search_hotels" in available_tool_names:
                 fallback_search_done = True
                 if on_reset:
                     on_reset()
@@ -349,7 +369,7 @@ async def run_agent(
                     arguments = json.loads(arguments)
                 except json.JSONDecodeError:
                     arguments = {}
-            if not isinstance(arguments, dict) or name not in {"search_hotels", "get_hotel_detail"}:
+            if not isinstance(arguments, dict) or name not in available_tool_names:
                 logger.error("Model requested invalid tool call: tool=%s", name)
                 tool_result: Any = {"error": "지원하지 않거나 잘못된 도구 요청입니다."}
                 name = str(name or "unknown")
@@ -405,6 +425,7 @@ async def run_agent(
     response = await asyncio.to_thread(
         _ollama_request,
         messages,
+        tools=ollama_tools,
         allow_tools=False,
         on_progress=on_progress,
         on_token=on_token,

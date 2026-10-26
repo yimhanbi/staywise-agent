@@ -26,6 +26,7 @@ export const HomeView = ({ title, description }: HomeViewProps) => {
   const [hotels, setHotels] = useState<Hotel[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchError, setSearchError] = useState("");
   const [activeCategory, setActiveCategory] = useState("전체");
   const [searchFilters, setSearchFilters] = useState<SearchFilters>({
     adults: 1,
@@ -64,6 +65,15 @@ export const HomeView = ({ title, description }: HomeViewProps) => {
     pageNum: number = 1,
     filters: SearchFilters = { adults: 1, children: 0 },
   ) => {
+    if (filters.checkIn && filters.checkOut && filters.checkOut <= filters.checkIn) {
+      setSearchError("체크아웃 날짜는 체크인 날짜보다 뒤여야 합니다. 날짜를 다시 선택해 주세요.");
+      setHasMore(false);
+      setIsLoading(false);
+      if (pageNum > 1) setPage(1);
+      return;
+    }
+
+    setSearchError("");
     setIsLoading(true);
     try {
       // 카테고리 label을 백엔드 value로 변환
@@ -93,7 +103,7 @@ export const HomeView = ({ title, description }: HomeViewProps) => {
 // 데이터가 0개이거나 이전에 불러온 데이터와 동일하면 더 이상 데이터가 없는 것으로 판단
       setHasMore(data.count > 0);
     } catch (error) {
-      console.error("Failed to load hotels:", error);
+      setSearchError(error instanceof Error ? error.message : "숙소 검색에 실패했습니다. 다시 시도해 주세요.");
     } finally {
       setIsLoading(false);
     }
@@ -249,6 +259,12 @@ export const HomeView = ({ title, description }: HomeViewProps) => {
           <HotelSkeleton key={`skeleton-${i}`} />
         ))}
       </div>
+
+      {searchError && (
+        <p className="mb-6 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
+          {searchError}
+        </p>
+      )}
 
       {!isLoading && hotels.length === 0 && (
         <p className="col-span-full text-center py-20 text-gray-500">조회된 숙소가 없습니다.</p>

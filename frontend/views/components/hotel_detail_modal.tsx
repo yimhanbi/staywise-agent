@@ -1,5 +1,6 @@
-import type { MouseEvent } from "react";
+import { useEffect, useState, type MouseEvent } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { addDays, format, parseISO } from "date-fns";
 import KakaoMap from "@/components/KakaoMap";
 import { getHotelImage } from "@/lib/hotel-images";
 
@@ -10,6 +11,10 @@ interface HotelDetailModalProps {
 }
 
 export const HotelDetailModal = ({ hotel, isOpen, onClose }: HotelDetailModalProps) => {
+  const [checkIn, setCheckIn] = useState("");
+  const [checkOut, setCheckOut] = useState("");
+  const [guests, setGuests] = useState(1);
+  const [bookingError, setBookingError] = useState("");
   const hotelIdNum = Number(hotel?.id) || 0;
   const galleryImages = [0, 1, 2, 3, 4].map((variant) => getHotelImage(hotelIdNum, variant));
   const rawLatitude = hotel?.latitude ?? hotel?.mapy;
@@ -17,6 +22,37 @@ export const HotelDetailModal = ({ hotel, isOpen, onClose }: HotelDetailModalPro
   const latitude = rawLatitude == null || rawLatitude === "" ? undefined : Number(rawLatitude);
   const longitude = rawLongitude == null || rawLongitude === "" ? undefined : Number(rawLongitude);
   const hasValidLocation = Number.isFinite(latitude) && Number.isFinite(longitude);
+  const today = format(new Date(), "yyyy-MM-dd");
+  const minCheckOut = checkIn ? format(addDays(parseISO(checkIn), 1), "yyyy-MM-dd") : today;
+  const maxGuests = Math.min(20, Math.max(1, Number(hotel?.max_guests) || 20));
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setCheckIn("");
+    setCheckOut("");
+    setGuests(1);
+    setBookingError("");
+  }, [isOpen, hotel?.id]);
+
+  const continueToBooking = () => {
+    setBookingError("");
+    if (!checkIn || !checkOut) {
+      setBookingError("예약할 체크인과 체크아웃 날짜를 선택해 주세요.");
+      return;
+    }
+    if (checkOut <= checkIn) {
+      setBookingError("체크아웃은 체크인 다음 날 이후로 선택해 주세요.");
+      return;
+    }
+
+    const params = new URLSearchParams({
+      hotelId: String(hotelIdNum),
+      checkIn,
+      checkOut,
+      guests: String(guests),
+    });
+    window.location.href = `/checkout?${params.toString()}`;
+  };
 
   if (isOpen && hotel) {
     console.log("현재 숙소 좌표: ", latitude, longitude);
@@ -221,27 +257,65 @@ export const HotelDetailModal = ({ hotel, isOpen, onClose }: HotelDetailModalPro
 
                     <div className="border border-[#99F6E4] rounded-xl overflow-hidden mb-4">
                       <div className="grid grid-cols-2 border-b border-[#99F6E4]">
-                        <div className="p-3 border-r border-[#99F6E4] hover:bg-[#F0FDFA] cursor-pointer">
-                          <label className="block text-[10px] font-extrabold uppercase text-gray-900">체크인</label>
-                          <div className="text-sm text-gray-500">날짜 추가</div>
-                        </div>
-                        <div className="p-3 hover:bg-[#F0FDFA] cursor-pointer">
-                          <label className="block text-[10px] font-extrabold uppercase text-gray-900">체크아웃</label>
-                          <div className="text-sm text-gray-500">날짜 추가</div>
-                        </div>
+                        <label className="p-3 border-r border-[#99F6E4] hover:bg-[#F0FDFA]">
+                          <span className="block text-[10px] font-extrabold uppercase text-gray-900">체크인</span>
+                          <input
+                            id="modal-check-in"
+                            name="checkIn"
+                            type="date"
+                            min={today}
+                            value={checkIn}
+                            onChange={(event) => {
+                              const nextCheckIn = event.target.value;
+                              setCheckIn(nextCheckIn);
+                              if (checkOut && checkOut <= nextCheckIn) setCheckOut("");
+                              setBookingError("");
+                            }}
+                            className="mt-1 w-full min-w-0 bg-transparent text-sm text-gray-700 outline-none"
+                          />
+                        </label>
+                        <label className="p-3 hover:bg-[#F0FDFA]">
+                          <span className="block text-[10px] font-extrabold uppercase text-gray-900">체크아웃</span>
+                          <input
+                            id="modal-check-out"
+                            name="checkOut"
+                            type="date"
+                            min={minCheckOut}
+                            value={checkOut}
+                            disabled={!checkIn}
+                            onChange={(event) => {
+                              setCheckOut(event.target.value);
+                              setBookingError("");
+                            }}
+                            className="mt-1 w-full min-w-0 bg-transparent text-sm text-gray-700 outline-none disabled:text-gray-400"
+                          />
+                        </label>
                       </div>
-                      <div className="p-3 hover:bg-[#F0FDFA] cursor-pointer">
-                        <label className="block text-[10px] font-extrabold uppercase text-gray-900">게스트</label>
-                        <div className="text-sm text-gray-500">게스트 1명</div>
-                      </div>
+                      <label className="block p-3 hover:bg-[#F0FDFA]">
+                        <span className="block text-[10px] font-extrabold uppercase text-gray-900">게스트</span>
+                        <select
+                          id="modal-guests"
+                          name="guests"
+                          value={guests}
+                          onChange={(event) => setGuests(Number(event.target.value))}
+                          className="mt-1 w-full bg-transparent text-sm text-gray-700 outline-none"
+                        >
+                          {Array.from({ length: maxGuests }, (_, index) => index + 1).map((count) => (
+                            <option key={count} value={count}>게스트 {count}명</option>
+                          ))}
+                        </select>
+                      </label>
                     </div>
 
                     <button
-                      onClick={() => { window.location.href = `/checkout?hotelId=${hotelIdNum}`; }}
+                      type="button"
+                      onClick={continueToBooking}
                       className="w-full bg-[#0F766E] text-white py-3.5 rounded-xl font-bold text-lg hover:bg-[#115E59] transition-colors shadow-lg active:scale-95 transition-transform"
                     >
                       예약하기
                     </button>
+
+                    {bookingError && <p role="alert" className="mt-3 text-center text-xs text-red-600">{bookingError}</p>}
 
                     <p className="text-center text-gray-500 text-xs mt-4 italic">예약 확정 전에는 요금이 청구되지 않습니다.</p>
                   </div>

@@ -34,6 +34,9 @@ export const CATEGORIES: Category[] = [
   { label: "한옥", icon: "🏮", value: "B02011600" },
   { label: "게스트하우스", icon: "🏘️", value: "B02011100" },
   { label: "모텔", icon: "🛏️", value: "B02010900" },
+  { label: "호스텔", icon: "🧳", value: "B02011000" },
+  { label: "유스호스텔", icon: "🎒", value: "B02010600" },
+  { label: "민박", icon: "🏠", value: "B02011200" },
   { label: "캠핑", icon: "⛺", value: "A02030100" },
   { label: "리조트", icon: "🏖️", value: "B02010500" },
 ];

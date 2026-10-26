@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from sqlalchemy import create_engine, ForeignKey
+from sqlalchemy import create_engine, ForeignKey, and_, or_
 from sqlalchemy.orm import sessionmaker
 from dotenv import load_dotenv
 import asyncio
@@ -18,8 +18,9 @@ import uuid
 from datetime import datetime, timedelta
 from pydantic import BaseModel, Field
 from typing import Literal, Optional
-from mcp_client import call_mcp_tool
+from mcp_client import MCPToolSession, call_mcp_tool
 from ollama_agent import run_agent
+from category_mapping import category_filter
 
 
 class AiSearchRequest(BaseModel):
@@ -267,14 +268,23 @@ async def ai_chat(payload: AiChatRequest):
 
         logger.info("AI chat started: id=%s turns=%d", conversation_id, len(history))
         notify_progress("대화 요청을 처리하고 있어요…")
+
+        async def run_agent_with_discovered_tools():
+            async with MCPToolSession() as mcp_session:
+                discovered_tools = await mcp_session.list_tools()
+                tool_names = [tool.name for tool in discovered_tools]
+                logger.info("MCP tool discovery completed: id=%s tools=%s", conversation_id, tool_names)
+                return await run_agent(
+                    history,
+                    mcp_session.call_tool,
+                    discovered_tools,
+                    on_progress=notify_progress,
+                    on_token=notify_token,
+                    on_reset=reset_draft,
+                )
+
         task = asyncio.create_task(
-            run_agent(
-                history,
-                call_mcp_api,
-                on_progress=notify_progress,
-                on_token=notify_token,
-                on_reset=reset_draft,
-            )
+            run_agent_with_discovered_tools()
         )
         try:
             while not task.done():
@@ -602,7 +612,16 @@ def get_hotels(
         
         # 1. 카테고리 필터링 (한국관광공사 표준 분류 코드로 정확히 매칭)
         if category and category != "전체":
-            query = query.filter(Hotel.category == category)
+            category_codes, category_keywords = category_filter(category)
+            category_conditions = [Hotel.category.in_(category_codes)] if category_codes else []
+            if category_keywords:
+                category_conditions.append(
+                    and_(
+                        or_(Hotel.category.is_(None), Hotel.category == ""),
+                        or_(*(Hotel.name.ilike(f"%{keyword}%") for keyword in category_keywords)),
+                    )
+                )
+            query = query.filter(or_(*category_conditions))
             
         # 2. 통합 검색 필터 (location 또는 search 파라미터 사용)
         search_term = location or search

@@ -6,7 +6,7 @@ import {
   endOfMonth,
   format,
   getDay,
-  startOfMonth,
+  startOfDay,
 } from "date-fns";
 import { ko } from "date-fns/locale";
 import { DayPicker } from "react-day-picker";
@@ -56,9 +56,11 @@ export function DatePickerModal({
         to: addDays(today, 14),
       };
     } else {
+      const from = startOfDay(today);
+      const monthEnd = endOfMonth(today);
       newRange = {
-        from: startOfMonth(today),
-        to: endOfMonth(today),
+        from,
+        to: format(monthEnd, "yyyy-MM-dd") > format(from, "yyyy-MM-dd") ? monthEnd : addDays(from, 1),
       };
     }
     onSelectRange(newRange);
@@ -84,6 +86,8 @@ export function DatePickerModal({
           mode="range"
           selected={selectedRange}
           onSelect={onSelectRange}
+          disabled={{ before: startOfDay(new Date()) }}
+          min={1}
           locale={ko}
           numberOfMonths={1}
           className="rdp-custom border-none"
@@ -96,9 +100,7 @@ export function DatePickerModal({
 export function formatDateRangeLabel(range: DateRange | undefined): string {
   if (!range?.from) return "날짜 추가";
   const fromStr = format(range.from, "M월 d일", { locale: ko });
-  if (!range.to || range.from.getTime() === range.to.getTime()) {
-    return fromStr;
-  }
+  if (!range.to) return `${fromStr} 체크인`;
   const toStr = format(range.to, "M월 d일", { locale: ko });
   return `${fromStr} ~ ${toStr}`;
 }

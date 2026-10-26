@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import Any
 
@@ -53,15 +54,53 @@ def _decode_tool_result(result: Any) -> Any:
 
 
 async def call_mcp_tool(tool_name: str, arguments: dict[str, Any] | None = None) -> Any:
-    """Launch the local MCP server, call one tool over stdio, then close it."""
-    server = StdioServerParameters(
-        command=sys.executable,
-        args=[str(MCP_SERVER_PATH)],
-        env=_server_environment(),
-    )
+    """Launch the MCP server, call one tool over stdio, then close it."""
+    async with MCPToolSession() as mcp_session:
+        return await mcp_session.call_tool(tool_name, arguments)
 
-    async with stdio_client(server) as (read_stream, write_stream):
-        async with ClientSession(read_stream, write_stream) as session:
-            await session.initialize()
-            result = await session.call_tool(tool_name, arguments or {})
-            return _decode_tool_result(result)
+
+class MCPToolSession:
+    """One initialized MCP connection shared across discovery and tool calls."""
+
+    def __init__(self) -> None:
+        self._exit_stack: AsyncExitStack | None = None
+        self._session: ClientSession | None = None
+
+    async def __aenter__(self) -> "MCPToolSession":
+        self._exit_stack = AsyncExitStack()
+        await self._exit_stack.__aenter__()
+        server = StdioServerParameters(
+            command=sys.executable,
+            args=[str(MCP_SERVER_PATH)],
+            env=_server_environment(),
+        )
+        try:
+            read_stream, write_stream = await self._exit_stack.enter_async_context(stdio_client(server))
+            self._session = await self._exit_stack.enter_async_context(
+                ClientSession(read_stream, write_stream)
+            )
+            await self._session.initialize()
+            return self
+        except BaseException:
+            await self._exit_stack.aclose()
+            self._exit_stack = None
+            self._session = None
+            raise
+
+    async def __aexit__(self, exc_type: Any, exc: Any, traceback: Any) -> None:
+        if self._exit_stack is not None:
+            await self._exit_stack.__aexit__(exc_type, exc, traceback)
+        self._exit_stack = None
+        self._session = None
+
+    async def list_tools(self) -> list[Any]:
+        if self._session is None:
+            raise RuntimeError("MCP session is not connected")
+        result = await self._session.list_tools()
+        return list(result.tools)
+
+    async def call_tool(self, tool_name: str, arguments: dict[str, Any] | None = None) -> Any:
+        if self._session is None:
+            raise RuntimeError("MCP session is not connected")
+        result = await self._session.call_tool(tool_name, arguments or {})
+        return _decode_tool_result(result)

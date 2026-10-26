@@ -1,6 +1,7 @@
 'use client';
 
 import { FormEvent, useEffect, useRef, useState } from "react";
+import { format } from "date-fns";
 import type { DateRange } from "react-day-picker";
 import { AnimatePresence, motion } from "framer-motion";
 import { DatePickerModal, formatDateRangeLabel } from "./date_picker_modal";
@@ -81,6 +82,7 @@ export const SearchBar = ({ searchQuery, onSearchQueryChange, onSearch }: Search
   const [activeTab, setActiveTab] = useState<SearchTab>(null);
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
   const [dateLabel, setDateLabel] = useState("날짜 추가");
+  const [dateError, setDateError] = useState("");
   const [adults, setAdults] = useState(1);
   const [children, setChildren] = useState(0);
   const [infants, setInfants] = useState(0);
@@ -122,12 +124,30 @@ export const SearchBar = ({ searchQuery, onSearchQueryChange, onSearch }: Search
   const totalGuests = adults + children + infants;
   const guestLabel = totalGuests > 0 ? `게스트 ${totalGuests}명` : "게스트 추가";
 
+  const handleDateRangeChange = (range: DateRange | undefined) => {
+    setDateRange(range);
+    setDateLabel(formatDateRangeLabel(range));
+    setDateError("");
+    if (range?.from && range.to) setActiveTab("guest");
+  };
+
   const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    // 날짜를 YYYY-MM-DD 형식으로 변환
+    if (dateRange?.from && !dateRange.to) {
+      setDateError("체크아웃 날짜도 선택해 주세요.");
+      setActiveTab("date");
+      return;
+    }
+    if (dateRange?.from && dateRange.to && dateRange.to <= dateRange.from) {
+      setDateError("체크아웃은 체크인 다음 날 이후로 선택해 주세요.");
+      setActiveTab("date");
+      return;
+    }
+
+    // UTC 변환으로 날짜가 하루 바뀌지 않도록 로컬 날짜를 그대로 전송한다.
     const params = {
-      checkIn: dateRange?.from ? dateRange.from.toISOString().split("T")[0] : undefined,
-      checkOut: dateRange?.to ? dateRange.to.toISOString().split("T")[0] : undefined,
+      checkIn: dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : undefined,
+      checkOut: dateRange?.to ? format(dateRange.to, "yyyy-MM-dd") : undefined,
       adults,
       children,
     };
@@ -208,12 +228,9 @@ export const SearchBar = ({ searchQuery, onSearchQueryChange, onSearch }: Search
                 >
                   <DatePickerModal
                     selectedRange={dateRange}
-                    onSelectRange={(r) => {
-                      setDateRange(r);
-                      setDateLabel(formatDateRangeLabel(r));
-                      if (r?.from && r?.to) setActiveTab("guest");
-                    }}
+                    onSelectRange={handleDateRangeChange}
                   />
+                  {dateError && <p className="mt-2 px-2 text-xs text-red-600" role="alert">{dateError}</p>}
                 </motion.div>
               )}
             </AnimatePresence>
