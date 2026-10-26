@@ -22,8 +22,8 @@ export interface Hotel {
   category?: string;
   price_per_night?: number;
   price?: number;
-  rating?: number;
-  reviews?: number;
+  rating?: number | null;
+  reviews?: number | null;
   date_range?: string;
   stay_nights?: number;
   description?: string;
@@ -33,8 +33,10 @@ export interface Hotel {
   hotel_type?: string;
   imageUrl?: string;
   image_url?: string;
-  max_guests?: number;
-  bedrooms?: number;
-  beds?: number;
-  bathrooms?: number;
+  max_guests?: number | null;
+  bedrooms?: number | null;
+  beds?: number | null;
+  bathrooms?: number | null;
+  /** Portfolio-only sample values; not verified against live lodging data. */
+  is_demo_data?: boolean;
 }

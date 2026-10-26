@@ -47,7 +47,7 @@ interface AiChatDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   onSelectHotel: (hotel: Hotel) => void;
-  onStartBooking: (hotel: Hotel, search?: ChatMessage["search"]) => void;
+  onStartBooking: (hotel: Hotel, search?: ChatMessage["search"], conversationId?: string) => void;
   onApplySearch: (search: { location?: string; category?: string; guests?: number }) => void;
 }
 
@@ -61,6 +61,9 @@ export const AiChatDrawer = ({ isOpen, onClose, onSelectHotel, onStartBooking, o
   const [conversationId, setConversationId] = useState("");
   const [conversations, setConversations] = useState<AiConversationSummary[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [compareHotels, setCompareHotels] = useState<Hotel[]>([]);
+  const [compareOpen, setCompareOpen] = useState(false);
+  const [bookingDraft, setBookingDraft] = useState<{ hotel: Hotel; search?: ChatMessage["search"] } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const nextId = useRef(1);
   const initialized = useRef(false);
@@ -143,6 +146,9 @@ export const AiChatDrawer = ({ isOpen, onClose, onSelectHotel, onStartBooking, o
       setConversationId(id);
       window.localStorage.setItem(CURRENT_CONVERSATION_KEY, id);
       setMessages(restoredMessages);
+      setCompareHotels([]);
+      setCompareOpen(false);
+      setBookingDraft(null);
       nextId.current = restoredMessages.reduce((max, message) => Math.max(max, message.id), 0) + 1;
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "대화 기록을 불러오지 못했습니다.");
@@ -156,10 +162,41 @@ export const AiChatDrawer = ({ isOpen, onClose, onSelectHotel, onStartBooking, o
     setConversationId(id);
     window.localStorage.setItem(CURRENT_CONVERSATION_KEY, id);
     setMessages([]);
+    setCompareHotels([]);
+    setCompareOpen(false);
+    setBookingDraft(null);
     setInput("");
     setHistoryOpen(false);
     nextId.current = 1;
     void startGreeting(id);
+  };
+
+  const toggleCompareHotel = (hotel: Hotel) => {
+    const alreadySelected = compareHotels.some((item) => String(item.id) === String(hotel.id));
+    if (alreadySelected) {
+      setCompareHotels((current) => current.filter((item) => String(item.id) !== String(hotel.id)));
+      setCompareOpen(false);
+      return;
+    }
+    if (compareHotels.length >= 3) {
+      setError("숙소 비교는 한 번에 최대 3곳까지 가능합니다.");
+      return;
+    }
+    setError("");
+    setCompareHotels((current) => [...current, hotel]);
+  };
+
+  const deleteConversation = async (id: string) => {
+    try {
+      await hotelService.deleteAiConversation(id);
+      setConversations((current) => current.filter((item) => item.id !== id));
+      if (id === conversationId) {
+        window.localStorage.removeItem(CURRENT_CONVERSATION_KEY);
+        startNewConversation();
+      }
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "대화 기록을 삭제하지 못했습니다.");
+    }
   };
 
   useEffect(() => {
@@ -229,14 +266,14 @@ export const AiChatDrawer = ({ isOpen, onClose, onSelectHotel, onStartBooking, o
       <aside
         role="dialog"
         aria-modal="true"
-        aria-label="Staywise AI 숙소 찾기"
+        aria-labelledby="staywise-ai-chat-title"
         className="absolute right-0 top-0 flex h-full w-full min-w-0 max-w-[100vw] flex-col overflow-hidden bg-white shadow-2xl sm:w-[440px]"
       >
         <header className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-full bg-teal-700 text-lg text-white">✦</div>
             <div>
-              <h2 className="font-bold text-gray-900">Staywise AI</h2>
+              <h2 id="staywise-ai-chat-title" className="font-bold text-gray-900">Staywise AI</h2>
               <p className="text-xs text-gray-500">대화로 숙소 찾기</p>
             </div>
           </div>
@@ -266,20 +303,48 @@ export const AiChatDrawer = ({ isOpen, onClose, onSelectHotel, onStartBooking, o
           </div>
         </header>
 
+        {bookingDraft && (
+          <section className="shrink-0 border-b border-teal-100 bg-teal-50 px-4 py-3" aria-label="예약 전 확인">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-teal-800">예약 정보 확인</p>
+                <p className="mt-1 truncate text-sm font-bold text-gray-900">{bookingDraft.hotel.name}</p>
+                <p className="mt-1 text-xs text-gray-600">
+                  {bookingDraft.search?.checkIn && bookingDraft.search?.checkOut
+                    ? `${bookingDraft.search.checkIn} – ${bookingDraft.search.checkOut}`
+                    : "체크인·체크아웃 날짜는 다음 단계에서 입력할 수 있어요."}
+                  {bookingDraft.search?.guests ? ` · 게스트 ${bookingDraft.search.guests}명` : ""}
+                </p>
+              </div>
+              <button type="button" onClick={() => setBookingDraft(null)} className="shrink-0 text-xs text-gray-500">닫기</button>
+            </div>
+            <p className="mt-2 rounded-lg bg-white/80 p-2 text-[11px] leading-4 text-gray-600">
+              포트폴리오 데모입니다. 실제 객실 재고 및 숙소 운영자 예약 확정은 연동되어 있지 않습니다. 결제는 테스트 키를 사용해 진행해 주세요.
+            </p>
+            <div className="mt-2 flex gap-2">
+              <button type="button" onClick={() => onStartBooking(bookingDraft.hotel, bookingDraft.search, conversationId)} className="flex-1 rounded-lg bg-teal-700 px-3 py-2 text-xs font-semibold text-white hover:bg-teal-800">예약 정보 입력하기</button>
+              <button type="button" onClick={() => setBookingDraft(null)} className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs text-gray-600">취소</button>
+            </div>
+          </section>
+        )}
+
         {historyOpen && (
           <div className="max-h-56 shrink-0 overflow-y-auto border-b border-gray-100 bg-white px-4 py-2">
             {conversations.length === 0 ? (
               <p className="py-3 text-center text-xs text-gray-500">저장된 대화가 없습니다.</p>
             ) : conversations.map((conversation) => (
-              <button
-                key={conversation.id}
-                type="button"
-                onClick={() => void selectConversation(conversation.id)}
-                className={`block w-full truncate rounded-lg px-3 py-2 text-left text-sm hover:bg-teal-50 ${conversation.id === conversationId ? "bg-teal-50 font-semibold text-teal-800" : "text-gray-700"}`}
-              >
-                {conversation.title}
-              </button>
+              <div key={conversation.id} className={`flex items-center gap-1 rounded-lg ${conversation.id === conversationId ? "bg-teal-50" : "hover:bg-gray-50"}`}>
+                <button
+                  type="button"
+                  onClick={() => void selectConversation(conversation.id)}
+                  className={`min-w-0 flex-1 truncate px-3 py-2 text-left text-sm ${conversation.id === conversationId ? "font-semibold text-teal-800" : "text-gray-700"}`}
+                >
+                  {conversation.title}
+                </button>
+                <button type="button" onClick={() => void deleteConversation(conversation.id)} className="shrink-0 rounded px-2 py-1 text-xs text-red-600 hover:bg-red-50" aria-label={`${conversation.title} 대화 삭제`}>삭제</button>
+              </div>
             ))}
+            <p className="px-3 pb-1 text-[11px] text-gray-400">대화 기록은 직접 삭제하기 전까지 보관됩니다.</p>
           </div>
         )}
 
@@ -293,32 +358,44 @@ export const AiChatDrawer = ({ isOpen, onClose, onSelectHotel, onStartBooking, o
                 <p className="whitespace-pre-wrap break-words text-sm leading-6">{message.text}</p>
                 {message.hotels && message.hotels.length > 0 && (
                   <div className="mt-3 w-full min-w-0 max-w-full space-y-2">
-                    {message.hotels.map((hotel) => (
-                      <button
-                        key={hotel.id}
-                        type="button"
-                        onClick={() => onSelectHotel(hotel)}
-                        aria-label={`${hotel.name} 상세 모달 열기`}
-                        className="flex w-full min-w-0 items-center gap-3 overflow-hidden rounded-xl border border-gray-100 bg-white p-2 text-left shadow-sm transition hover:border-teal-300"
-                      >
-                        <img src={getHotelImage(hotel.id)} alt="" className="h-16 w-16 rounded-lg object-cover" />
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-sm font-semibold text-gray-900">{hotel.name}</span>
-                          <span className="mt-1 block truncate text-xs text-gray-500">{hotel.address}</span>
-                        </span>
-                        <span className="shrink-0 text-xs font-medium text-teal-700">상세 보기 ›</span>
-                      </button>
-                    ))}
-                    {message.hotels.map((hotel) => (
-                      <button
-                        key={`book-${hotel.id}`}
-                        type="button"
-                        onClick={() => onStartBooking(hotel, message.search)}
-                        className="w-full min-w-0 whitespace-normal break-words rounded-xl bg-teal-700 px-3 py-2.5 text-sm font-semibold text-white hover:bg-teal-800"
-                      >
-                        {hotel.name} 예약하기
-                      </button>
-                    ))}
+                    {message.hotels.map((hotel) => {
+                      const selected = compareHotels.some((item) => String(item.id) === String(hotel.id));
+                      return (
+                        <article key={hotel.id} className="overflow-hidden rounded-xl border border-gray-100 bg-white p-2 shadow-sm">
+                          <button
+                            type="button"
+                            onClick={() => onSelectHotel(hotel)}
+                            aria-label={`${hotel.name} 상세 모달 열기`}
+                            className="flex w-full min-w-0 items-center gap-3 text-left"
+                          >
+                            <img src={getHotelImage(hotel.id)} alt="" className="h-16 w-16 shrink-0 rounded-lg object-cover" />
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-sm font-semibold text-gray-900">{hotel.name}</span>
+                              <span className="mt-1 block truncate text-xs text-gray-500">{hotel.address}</span>
+                              <span className="mt-1 block truncate text-xs text-gray-600">평점·객실 정보 없음 · 예시 요금 ₩{(hotel.price_per_night ?? hotel.price ?? 0).toLocaleString()}/박</span>
+                            </span>
+                            <span className="shrink-0 text-xs font-medium text-teal-700">상세 ›</span>
+                          </button>
+                          <div className="mt-2 grid grid-cols-2 gap-2 border-t border-gray-100 pt-2">
+                            <button
+                              type="button"
+                              aria-pressed={selected}
+                              onClick={() => toggleCompareHotel(hotel)}
+                              className={`rounded-lg border px-2 py-2 text-xs font-medium ${selected ? "border-teal-600 bg-teal-50 text-teal-800" : "border-gray-200 bg-white text-gray-700 hover:border-teal-300"}`}
+                            >
+                              {selected ? "✓ 비교 선택됨" : "비교할 숙소로 선택"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setBookingDraft({ hotel, search: message.search })}
+                              className="rounded-lg bg-teal-700 px-2 py-2 text-xs font-semibold text-white hover:bg-teal-800"
+                            >
+                              예약 정보 확인
+                            </button>
+                          </div>
+                        </article>
+                      );
+                    })}
                     {message.search && (
                       <button
                         type="button"
@@ -350,6 +427,26 @@ export const AiChatDrawer = ({ isOpen, onClose, onSelectHotel, onStartBooking, o
           {error && <p className="text-xs text-red-600">{error}</p>}
         </div>
 
+        {compareHotels.length > 0 && (
+          <section className="shrink-0 border-t border-teal-100 bg-white px-4 py-3" aria-label="비교할 숙소 목록">
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-semibold text-gray-800">비교할 숙소 ({compareHotels.length}/3)</p>
+                <p className="mt-1 truncate text-[11px] text-gray-500">{compareHotels.map((hotel) => hotel.name).join(" · ")}</p>
+              </div>
+              <button
+                type="button"
+                disabled={compareHotels.length < 2}
+                onClick={() => setCompareOpen(true)}
+                className="shrink-0 rounded-lg bg-teal-700 px-3 py-2 text-xs font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+              >
+                {compareHotels.length < 2 ? "2곳 이상 선택" : `${compareHotels.length}곳 비교하기`}
+              </button>
+              <button type="button" onClick={() => setCompareHotels([])} className="shrink-0 px-1 text-xs text-gray-500 hover:text-gray-800">비우기</button>
+            </div>
+          </section>
+        )}
+
         <form onSubmit={(event) => void submitMessage(event)} className="border-t border-gray-100 bg-white p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
           <div className="flex items-end gap-2 rounded-2xl border border-gray-200 bg-white p-2 focus-within:border-teal-500 focus-within:ring-2 focus-within:ring-teal-100">
             <textarea
@@ -371,6 +468,46 @@ export const AiChatDrawer = ({ isOpen, onClose, onSelectHotel, onStartBooking, o
             </button>
           </div>
         </form>
+
+        {compareOpen && (
+          <div className="absolute inset-0 z-30 flex flex-col bg-white" role="dialog" aria-modal="true" aria-labelledby="staywise-hotel-comparison-title">
+            <header className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
+              <div>
+                <h3 id="staywise-hotel-comparison-title" className="font-bold text-gray-900">숙소 비교</h3>
+                <p className="mt-1 text-xs text-gray-500">선택한 {compareHotels.length}곳의 조건을 확인해 보세요.</p>
+              </div>
+              <button type="button" onClick={() => setCompareOpen(false)} className="rounded-lg px-3 py-2 text-sm text-gray-600 hover:bg-gray-100">닫기</button>
+            </header>
+            <div className="flex-1 space-y-3 overflow-y-auto bg-gray-50 p-4">
+              {compareHotels.map((hotel) => (
+                <article key={hotel.id} className="rounded-xl border border-gray-200 bg-white p-4">
+                  <div className="flex items-start gap-3">
+                    <img src={getHotelImage(hotel.id)} alt="" className="h-16 w-16 rounded-lg object-cover" />
+                    <div className="min-w-0 flex-1">
+                      <h4 className="font-semibold text-gray-900">{hotel.name}</h4>
+                      <p className="mt-1 line-clamp-2 text-xs text-gray-500">{hotel.address}</p>
+                    </div>
+                    <button type="button" onClick={() => toggleCompareHotel(hotel)} className="shrink-0 text-xs text-gray-500 hover:text-red-600">빼기</button>
+                  </div>
+                  <dl className="mt-4 grid grid-cols-2 gap-x-3 gap-y-3 border-t border-gray-100 pt-3 text-xs">
+                    <div><dt className="text-gray-500">숙소 유형</dt><dd className="mt-1 font-medium text-gray-900">{hotel.category || "정보 없음"}</dd></div>
+                    <div><dt className="text-gray-500">평점</dt><dd className="mt-1 font-medium text-gray-900">{hotel.rating?.toFixed(1) ?? "정보 없음"}</dd></div>
+                    <div><dt className="text-gray-500">최대 인원</dt><dd className="mt-1 font-medium text-gray-900">{hotel.max_guests ? `${hotel.max_guests}명` : "정보 없음"}</dd></div>
+                    <div><dt className="text-gray-500">1박 예시 요금</dt><dd className="mt-1 font-semibold text-teal-800">₩{(hotel.price_per_night ?? hotel.price ?? 0).toLocaleString()}</dd></div>
+                  </dl>
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <button type="button" onClick={() => onSelectHotel(hotel)} className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 hover:border-teal-400">상세 보기</button>
+                    <button type="button" onClick={() => { setCompareOpen(false); setBookingDraft({ hotel }); }} className="rounded-lg bg-teal-700 px-3 py-2 text-xs font-semibold text-white hover:bg-teal-800">예약 정보 확인</button>
+                  </div>
+                </article>
+              ))}
+              {compareHotels.length < 2 && <p className="text-center text-xs text-gray-500">비교할 숙소를 2곳 이상 선택해 주세요.</p>}
+            </div>
+            <footer className="border-t border-gray-100 bg-white p-4">
+              <button type="button" onClick={() => setCompareOpen(false)} className="w-full rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm font-semibold text-teal-800">검색 결과로 돌아가기</button>
+            </footer>
+          </div>
+        )}
       </aside>
     </div>
   );

@@ -57,6 +57,9 @@ export default function HotelDetailPage() {
         )}
       </div>
       <p className="text-gray-600 underline mb-6">{hotel.address}</p>
+      <p className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
+        포트폴리오 데모 숙소입니다. 사진은 예시 이미지이며, 표시 요금은 실제 판매가가 아닙니다. 객실 정보와 실시간 예약 가능 여부는 제공되지 않습니다.
+      </p>
 
       <div className="relative aspect-video w-full rounded-2xl overflow-hidden bg-gray-100 mb-10 shadow-lg">
         <img
@@ -69,21 +72,13 @@ export default function HotelDetailPage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-16">
         <div className="md:col-span-2">
           <section className="border-b pb-8 mb-8">
-            <h2 className="text-2xl font-semibold mb-2">Staywise가 추천하는 특별한 숙소</h2>
-            <p className="text-gray-600">
-              최대 인원 {hotel.max_guests ?? 4}명 · 침실 {hotel.bedrooms ?? 2}개 · 침대 {hotel.beds ?? 2}개
-              · 욕실 {hotel.bathrooms ?? 1}개
-            </p>
+            <h2 className="text-2xl font-semibold mb-2">숙소 정보</h2>
+            <p className="text-gray-600">객실 구성과 수용 인원 정보는 제공되지 않습니다.</p>
           </section>
 
           <section className="mb-10">
-            <h3 className="text-xl font-bold mb-6">숙소 편의시설</h3>
-            <div className="grid grid-cols-2 gap-y-4">
-              <div className="flex items-center gap-3">📶 무선 인터넷</div>
-              <div className="flex items-center gap-3">🚗 무료 주차</div>
-              <div className="flex items-center gap-3">❄️ 에어컨</div>
-              <div className="flex items-center gap-3">🍳 주방 시설</div>
-            </div>
+            <h3 className="text-xl font-bold mb-3">편의시설</h3>
+            <p className="text-gray-600">편의시설 상세 정보는 제공되지 않습니다.</p>
           </section>
 
           <section>
@@ -98,10 +93,10 @@ export default function HotelDetailPage() {
         <div className="relative">
           <div className="sticky top-28 border border-neutral-200 rounded-3xl p-8 shadow-2xl bg-white">
             <div className="flex justify-between items-baseline mb-6">
-              <span className="text-2xl font-bold">
+                <span className="text-2xl font-bold">
                 ₩{(hotel.price ?? hotel.price_per_night ?? 0).toLocaleString()}
               </span>
-              <span className="text-neutral-500 text-sm">/ 박</span>
+                <span className="text-neutral-500 text-sm">/ 박 예시 요금</span>
             </div>
 
             <button
@@ -112,7 +107,7 @@ export default function HotelDetailPage() {
             </button>
 
             <div className="mt-4 text-center">
-              <p className="text-xs text-neutral-400">예약 확정 전에는 결제되지 않습니다.</p>
+              <p className="text-xs text-neutral-400">포트폴리오용 예시 금액입니다. 실제 판매가와 객실 재고는 연동되지 않습니다.</p>
             </div>
           </div>
         </div>

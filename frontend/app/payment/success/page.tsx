@@ -40,7 +40,8 @@ export default function PaymentSuccessPage() {
       <p role="status" className="mt-3 text-gray-600">{message}</p>
       {booking && <p className="mt-2 text-sm text-gray-500">{booking.hotel_name} · ₩{booking.amount.toLocaleString()}</p>}
       <p className="mt-5 max-w-md text-xs leading-5 text-gray-400">Staywise 포트폴리오 테스트 예약입니다. 실제 객실 재고나 숙소 운영자의 예약 확정과는 연결되지 않습니다.</p>
-      <a href="/" className="mt-7 rounded-xl bg-teal-700 px-6 py-3 font-semibold text-white">숙소 둘러보기</a>
+      {booking && <a href="/bookings" className="mt-7 rounded-xl border border-teal-700 px-6 py-3 font-semibold text-teal-800">예약 내역 보기</a>}
+      <a href="/" className={`${booking ? "mt-3" : "mt-7"} rounded-xl bg-teal-700 px-6 py-3 font-semibold text-white`}>숙소 둘러보기</a>
     </main>
   );
 }

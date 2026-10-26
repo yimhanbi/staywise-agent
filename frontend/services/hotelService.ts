@@ -146,6 +146,16 @@ export const hotelService = {
     return response.json();
   },
 
+  async deleteAiConversation(id: string): Promise<void> {
+    const response = await fetch(buildApiUrl(`/ai/conversations/${encodeURIComponent(id)}`), {
+      method: "DELETE",
+    });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      throw new Error(body.detail ?? "대화 기록을 삭제하지 못했습니다.");
+    }
+  },
+
   async fetchHotels(
     params: SearchParamsInput = {},
   ): Promise<HotelListResponse> {

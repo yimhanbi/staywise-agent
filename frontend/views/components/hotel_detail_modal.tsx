@@ -59,18 +59,6 @@ export const HotelDetailModal = ({ hotel, isOpen, onClose }: HotelDetailModalPro
   }
   
 
-  function generateRandomHostName(id: number) {
-    const firstNames = ["지민", "서준", "민서", "하준", "지우", "도윤", "서연", "예준", "수아", "시우", "하은", "지호", "채원", "준서", "윤서"];
-    const lastNames = ["김", "이", "박", "최", "정", "강", "조", "윤", "장", "임"];
-    
-    const firstIndex = (id * 7) % firstNames.length;
-    const lastIndex = (id * 3) % lastNames.length;
-    
-    return `${lastNames[lastIndex]}${firstNames[firstIndex]}`;
-  }
-  
-  const hostName = hotel ? generateRandomHostName(hotelIdNum) : "StayWise AI";
-
   return (
     <AnimatePresence>
       {isOpen && hotel && (
@@ -165,9 +153,7 @@ export const HotelDetailModal = ({ hotel, isOpen, onClose }: HotelDetailModalPro
                   <div>
                     <h2 className="text-3xl font-bold text-gray-900">{hotel.name}</h2>
                     <div className="flex items-center gap-2 mt-2 text-sm text-gray-600">
-                      <span className="flex items-center gap-1 font-bold text-[#0F766E]">★ {hotel.rating ?? 4.8}</span>
-                      <span>•</span>
-                      <span className="underline cursor-pointer font-medium">후기 {hotel.reviews ?? 120}개</span>
+                      <span className="font-medium text-gray-500">{hotel.rating == null ? "평점 정보 없음" : `★ ${hotel.rating}`}</span>
                       <span>•</span>
                       <span>{hotel.address}</span>
                     </div>
@@ -190,20 +176,18 @@ export const HotelDetailModal = ({ hotel, isOpen, onClose }: HotelDetailModalPro
 
                   <div className="flex items-center gap-4 py-6 border-b border-gray-100">
                     <div className="w-12 h-12 bg-[#2D6A6A] rounded-full flex items-center justify-center text-white font-bold text-sm">
-                      {hostName.charAt(0)}
+                      공
                     </div>
                     <div className="flex flex-col">
-                      <h4 className="text-lg font-bold text-black">{hostName}님이 호스팅하는 숙소</h4>
-                      <p className="text-sm text-gray-600">
-                        최대 인원 {hotel.max_guests ?? 4}명 · 침실 {hotel.bedrooms ?? 2}개 · 침대 {hotel.beds ?? 2}개 · 욕실 {hotel.bathrooms ?? 1}개
-                      </p>
+                      <h4 className="text-lg font-bold text-black">공공 숙박 정보</h4>
+                      <p className="text-sm text-gray-600">객실 구성과 수용 인원 정보는 제공되지 않습니다.</p>
                     </div>
                   </div>
 
                   <hr className="border-gray-100" />
 
                   <p className="text-gray-700 leading-relaxed text-lg whitespace-pre-line">
-                    {hotel.description || "이 숙소는 아름다운 전망과 편안한 휴식을 제공합니다. StayWise가 엄선한 리스트 중 하나로, 주변 관광지와 인접해 있어 여행하기에 매우 편리합니다."}
+                    {hotel.description || "공공 숙박 정보에 등록된 업소입니다."}
                   </p>
 
                   {(hotel.urgency || hotel.urgency_message) && (
@@ -239,8 +223,7 @@ export const HotelDetailModal = ({ hotel, isOpen, onClose }: HotelDetailModalPro
                     <div className="mt-6">
                       <h4 className="text-lg font-bold text-gray-900">{hotel.address}</h4>
                       <p className="text-gray-600 mt-2 leading-relaxed">
-                        이 숙소는 주변 경관이 아름답고 이동이 편리한 곳에 위치해 있습니다.
-                        상세한 위치 정보는 예약 확정 후에 제공됩니다.
+                        지도는 제공된 주소 또는 좌표를 기준으로 표시합니다. 실제 객실 정보와 예약 가능 여부는 확인되지 않습니다.
                       </p>
                     </div>
                   </div>
@@ -251,6 +234,7 @@ export const HotelDetailModal = ({ hotel, isOpen, onClose }: HotelDetailModalPro
                     <div className="flex justify-between items-end mb-6">
                       <div>
                         <span className="text-2xl font-bold">₩{(hotel.price ?? hotel.price_per_night ?? 0).toLocaleString()}</span>
+                        <span className="text-xs text-amber-700">예시 요금 · 실제 판매가 아님</span>
                         <span className="text-gray-500 font-normal"> /박</span>
                       </div>
                     </div>

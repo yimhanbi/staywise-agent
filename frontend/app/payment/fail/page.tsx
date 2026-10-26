@@ -1,13 +1,24 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { buildApiUrl } from "@/services/api_client";
 
 export default function PaymentFailPage() {
   const [message, setMessage] = useState("결제가 취소되었거나 완료되지 않았습니다.");
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const detail = params.get("message");
+    const orderId = params.get("orderId");
     if (detail) setMessage(detail);
+    if (orderId) {
+      fetch(buildApiUrl("/payments/fail"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ order_id: orderId, message: detail ?? undefined }),
+      }).catch(() => {
+        // Payment failure remains visible even if logging it to chat is unavailable.
+      });
+    }
   }, []);
 
   return (

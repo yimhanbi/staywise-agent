@@ -1,7 +1,7 @@
-from fastapi import FastAPI, HTTPException, Query, Response
+from fastapi import FastAPI, HTTPException, Query, Response, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from sqlalchemy import create_engine, ForeignKey, and_, or_
+from sqlalchemy import create_engine, ForeignKey, and_, or_, inspect, UniqueConstraint
 from sqlalchemy.orm import sessionmaker
 from dotenv import load_dotenv
 import asyncio
@@ -9,13 +9,19 @@ import os
 import random
 import json
 import math
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
 import logging
 import base64
 import uuid
-from datetime import datetime, timedelta
+import hashlib
+import hmac
+import secrets
+import time
+from datetime import datetime
+from html import unescape
 from pydantic import BaseModel, Field
 from typing import Literal, Optional
 from mcp_client import MCPToolSession, call_mcp_tool
@@ -47,6 +53,7 @@ class BookingCreateRequest(BaseModel):
     check_in: str
     check_out: str
     guests: int = Field(ge=1, le=20)
+    conversation_id: Optional[str] = None
 
 
 class PaymentConfirmRequest(BaseModel):
@@ -54,89 +61,29 @@ class PaymentConfirmRequest(BaseModel):
     order_id: str = Field(min_length=6, max_length=64)
     amount: int = Field(gt=0)
 
-TYPE_DESCRIPTIONS = {
-    "city": [
-        "도심 속에서 편안한 휴식을 즐길 수 있는 공간입니다.",
-        "이동이 편리해 여행 일정을 효율적으로 구성할 수 있습니다.",
-        "주요 명소와 가까워 짧은 일정에도 잘 어울리는 숙소입니다.",
-    ],
-    "nature": [
-        "자연에 둘러싸여 온전한 휴식을 즐길 수 있는 공간입니다.",
-        "조용한 환경에서 일상의 리듬을 되찾기에 좋은 숙소입니다.",
-        "창밖 풍경만으로도 충분한 여유를 느낄 수 있습니다.",
-    ],
-    "emotional": [
-        "머무는 시간 자체가 특별하게 느껴지는 공간입니다.",
-        "공간 곳곳에 섬세한 분위기가 담긴 숙소입니다.",
-        "사진보다 직접 머물렀을 때 더 매력적인 공간입니다.",
-    ],
-    "business": [
-        "업무와 휴식을 균형 있게 병행할 수 있는 숙소입니다.",
-        "조용한 환경과 안정적인 편의시설을 갖추고 있습니다.",
-        "출장이나 단기 체류에 적합한 공간입니다.",
-    ],
-    
-    
-}
 
-BASE_DESCRIPTIONS = [
-    "하루의 끝을 편안하게 마무리할 수 있습니다.",
-    "여행의 피로를 부드럽게 풀어주는 공간입니다.",
-    "누구와 함께 머물러도 만족도가 높은 숙소입니다.",
-]
-
-URGENCY_MESSAGES = [
-    "최근 많은 게스트가 이 숙소를 확인하고 있어요.",
-    "비슷한 숙소보다 빠르게 예약되고 있어요.",
-    "선택하신 날짜는 관심이 집중되고 있어요.",
-    "최근 예약이 꾸준히 이어지고 있어요.",
-]
-
-BADGES = ["인기 숙소", "요즘 핫한 숙소", "빠른 예약", "조회 급증"]
+class PaymentFailRequest(BaseModel):
+    order_id: str = Field(min_length=6, max_length=64)
+    message: str = Field(default="결제가 취소되었거나 완료되지 않았습니다.", max_length=300)
 
 
-def generate_random_stay_info(seed=None):
-    """인원을 기준으로 침실·침대·욕실을 상식적으로 결정."""
-    if seed is not None:
-        rng = random.Random(seed)
-    else:
-        rng = random
-    max_guests = rng.choice([2, 4, 6, 8])
-    if max_guests <= 2:
-        bedrooms = 1
-    elif max_guests <= 4:
-        bedrooms = rng.randint(1, 2)
-    else:
-        bedrooms = rng.randint(2, 4)
-    beds = rng.randint((max_guests // 2), max_guests)
-    bathrooms = max(1, bedrooms - rng.randint(0, 1))
-    return {
-        "max_guests": max_guests,
-        "bedrooms": bedrooms,
-        "beds": beds,
-        "bathrooms": bathrooms,
-    }
+class AuthCredentials(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+    password: str = Field(min_length=8, max_length=128)
+    name: Optional[str] = Field(default=None, min_length=1, max_length=80)
+
+DEMO_HOTEL_DESCRIPTION = (
+    "공공 숙박 정보에 등록된 업소입니다. 객실 상세 정보, 실제 요금, 평점과 "
+    "예약 가능 여부는 숙소 운영 데이터와 연동되어 있지 않습니다."
+)
 
 
-def generate_copy():
-    hotel_type = random.choice(list(TYPE_DESCRIPTIONS.keys()))
-    description = (
-        f"{random.choice(TYPE_DESCRIPTIONS[hotel_type])} "
-        f"{random.choice(BASE_DESCRIPTIONS)}"
-    )
-
-    urgency = None
-    if random.random() < 0.45:
-        urgency = random.choice(URGENCY_MESSAGES)
-
-    badges = random.sample(BADGES, k=random.randint(0, 2))
-
-    return {
-        "type": hotel_type,
-        "description": description,
-        "urgency": urgency,
-        "badges": badges,
-    }
+def public_hotel_description(value: str | None) -> str:
+    if not value:
+        return DEMO_HOTEL_DESCRIPTION
+    cleaned = re.sub(r"<[^>]*>", " ", unescape(value))
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned or DEMO_HOTEL_DESCRIPTION
 
 # 환경 변수 로드 (backend 디렉터리 또는 프로젝트 루트의 .env)
 load_dotenv()
@@ -228,14 +175,23 @@ async def ai_chat(payload: AiChatRequest):
         history = [{"role": item.role, "content": item.content} for item in stored_messages]
         if payload.messages:
             latest_user_message = payload.messages[-1].content
-            db.add(AiConversationMessage(
-                conversation_id=conversation_id,
-                role="user",
-                content=latest_user_message,
-            ))
+            # The client retries the same conversation after network/model errors.
+            # The user turn is committed before generation, so avoid appending it
+            # twice when that retry arrives before an assistant turn was stored.
+            already_saved = bool(
+                stored_messages
+                and stored_messages[-1].role == "user"
+                and stored_messages[-1].content == latest_user_message
+            )
+            if not already_saved:
+                db.add(AiConversationMessage(
+                    conversation_id=conversation_id,
+                    role="user",
+                    content=latest_user_message,
+                ))
+                history.append({"role": "user", "content": latest_user_message})
             if conversation_record.title == "새 대화":
                 conversation_record.title = latest_user_message.strip()[:120] or "새 대화"
-            history.append({"role": "user", "content": latest_user_message})
         conversation_record.updated_at = datetime.utcnow()
         db.commit()
         history = history[-16:]
@@ -472,6 +428,7 @@ class Booking(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     order_id = Column(String(64), unique=True, nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     hotel_id = Column(Integer, nullable=False, index=True)
     hotel_name = Column(String(255), nullable=False)
     check_in = Column(String(10), nullable=False)
@@ -481,6 +438,7 @@ class Booking(Base):
     amount = Column(Integer, nullable=False)
     status = Column(String(32), nullable=False, default="PENDING_PAYMENT")
     payment_key = Column(String(200), unique=True, nullable=True)
+    conversation_id = Column(String(36), nullable=True, index=True)
     created_at = Column(String(32), nullable=False, default=lambda: datetime.utcnow().isoformat())
 
 
@@ -504,13 +462,222 @@ class AiConversationMessage(Base):
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    email = Column(String(254), nullable=False, unique=True, index=True)
+    name = Column(String(80), nullable=False)
+    password_hash = Column(String(256), nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class UserFavorite(Base):
+    __tablename__ = "user_favorites"
+    __table_args__ = (UniqueConstraint("user_id", "hotel_id", name="uq_user_favorite_hotel"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    hotel_id = Column(Integer, ForeignKey("hotels.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+SESSION_COOKIE_NAME = "staywise_session"
+SESSION_SECRET = os.getenv(
+    "SESSION_SECRET",
+    "staywise-local-development-session-secret-change-before-deploying",
+).encode()
+SESSION_MAX_AGE = 60 * 60 * 24 * 14
+
+
+def hash_password(password: str, salt: bytes | None = None) -> str:
+    salt = salt or secrets.token_bytes(16)
+    digest = hashlib.scrypt(password.encode(), salt=salt, n=2**14, r=8, p=1)
+    return f"{base64.urlsafe_b64encode(salt).decode()}${base64.urlsafe_b64encode(digest).decode()}"
+
+
+def verify_password(password: str, stored_hash: str) -> bool:
+    try:
+        salt_part, digest_part = stored_hash.split("$", 1)
+        salt = base64.urlsafe_b64decode(salt_part.encode())
+        expected = base64.urlsafe_b64decode(digest_part.encode())
+        actual = hashlib.scrypt(password.encode(), salt=salt, n=2**14, r=8, p=1)
+        return hmac.compare_digest(actual, expected)
+    except (ValueError, TypeError):
+        return False
+
+
+def create_session_token(user_id: int) -> str:
+    payload = f"{user_id}:{int(time.time()) + SESSION_MAX_AGE}".encode()
+    encoded = base64.urlsafe_b64encode(payload).decode().rstrip("=")
+    signature = hmac.new(SESSION_SECRET, encoded.encode(), hashlib.sha256).digest()
+    signature_text = base64.urlsafe_b64encode(signature).decode().rstrip("=")
+    return f"{encoded}.{signature_text}"
+
+
+def get_session_user_id(request: Request) -> int | None:
+    token = request.cookies.get(SESSION_COOKIE_NAME)
+    if not token or "." not in token:
+        return None
+    encoded, signature = token.rsplit(".", 1)
+    expected = hmac.new(SESSION_SECRET, encoded.encode(), hashlib.sha256).digest()
+    try:
+        supplied = base64.urlsafe_b64decode(signature + "=" * (-len(signature) % 4))
+        payload = base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4)).decode()
+        user_id_text, expires_text = payload.split(":", 1)
+        if not hmac.compare_digest(expected, supplied) or int(expires_text) < int(time.time()):
+            return None
+        return int(user_id_text)
+    except (ValueError, TypeError, UnicodeDecodeError):
+        return None
+
+
+def get_auth_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+def require_user(request: Request, db=Depends(get_auth_db)) -> User:
+    user_id = get_session_user_id(request)
+    user = db.query(User).filter(User.id == user_id).first() if user_id else None
+    if not user:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+    return user
+
+
 # 테이블이 없으면 생성 (앱 시작 시 한 번)
 try:
     Base.metadata.create_all(bind=engine)
+    # create_all does not add columns to existing installations.
+    booking_columns = {column["name"] for column in inspect(engine).get_columns("bookings")}
+    if "conversation_id" not in booking_columns:
+        with engine.begin() as connection:
+            connection.exec_driver_sql("ALTER TABLE bookings ADD COLUMN conversation_id VARCHAR(36)")
+    if "user_id" not in booking_columns:
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "ALTER TABLE bookings ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE SET NULL"
+            )
 except Exception as e:
     import traceback
     print(f"[StayWise] DB 테이블 생성 확인 실패 (계속 진행): {e}")
     traceback.print_exc()
+
+def public_user(user: User) -> dict:
+    return {"id": user.id, "email": user.email, "name": user.name}
+
+
+def set_session_cookie(response: Response, user: User) -> None:
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=create_session_token(user.id),
+        max_age=SESSION_MAX_AGE,
+        httponly=True,
+        secure=os.getenv("SESSION_COOKIE_SECURE", "false").lower() == "true",
+        samesite="lax",
+        path="/",
+    )
+
+
+def serialize_favorite_hotel(hotel: Hotel) -> dict:
+    price = get_hotel_nightly_price(hotel.id)
+    return {
+        "id": hotel.id,
+        "name": hotel.name,
+        "address": hotel.address,
+        "latitude": hotel.latitude,
+        "longitude": hotel.longitude,
+        "category": hotel.category,
+        "image_url": f"https://loremflickr.com/800/600/mansion,villa,hotel/all?lock={hotel.id}",
+        "price": price,
+        "price_per_night": price,
+        "rating": None,
+        "reviews": None,
+        "description": public_hotel_description(hotel.description),
+        "is_demo_data": True,
+    }
+
+
+@app.post("/api/auth/register")
+def register(payload: AuthCredentials, response: Response, db=Depends(get_auth_db)):
+    email = payload.email.strip().lower()
+    if "@" not in email or "." not in email.rsplit("@", 1)[-1]:
+        raise HTTPException(status_code=422, detail="올바른 이메일 주소를 입력해 주세요.")
+    if db.query(User).filter(User.email == email).first():
+        raise HTTPException(status_code=409, detail="이미 가입된 이메일입니다.")
+    display_name = (payload.name or email.split("@", 1)[0]).strip() or "Staywise 사용자"
+    user = User(
+        email=email,
+        name=display_name,
+        password_hash=hash_password(payload.password),
+    )
+    db.add(user)
+    try:
+        db.commit()
+        db.refresh(user)
+    except Exception:
+        db.rollback()
+        logger.exception("User registration failed")
+        raise HTTPException(status_code=500, detail="회원가입에 실패했습니다.")
+    set_session_cookie(response, user)
+    return {"user": public_user(user)}
+
+
+@app.post("/api/auth/login")
+def login(payload: AuthCredentials, response: Response, db=Depends(get_auth_db)):
+    email = payload.email.strip().lower()
+    user = db.query(User).filter(User.email == email).first()
+    if not user or not verify_password(payload.password, user.password_hash):
+        raise HTTPException(status_code=401, detail="이메일 또는 비밀번호를 확인해 주세요.")
+    set_session_cookie(response, user)
+    return {"user": public_user(user)}
+
+
+@app.get("/api/auth/me")
+def get_current_user(request: Request, db=Depends(get_auth_db)):
+    user_id = get_session_user_id(request)
+    user = db.query(User).filter(User.id == user_id).first() if user_id else None
+    return {"user": public_user(user) if user else None}
+
+
+@app.post("/api/auth/logout")
+def logout(response: Response):
+    response.delete_cookie(SESSION_COOKIE_NAME, path="/", httponly=True, samesite="lax")
+    return {"ok": True}
+
+
+@app.get("/api/favorites")
+def get_favorites(user: User = Depends(require_user), db=Depends(get_auth_db)):
+    rows = (
+        db.query(Hotel)
+        .join(UserFavorite, UserFavorite.hotel_id == Hotel.id)
+        .filter(UserFavorite.user_id == user.id)
+        .order_by(UserFavorite.created_at.desc())
+        .all()
+    )
+    return {"hotels": [serialize_favorite_hotel(hotel) for hotel in rows]}
+
+
+@app.put("/api/favorites/{hotel_id}")
+def add_favorite(hotel_id: int, user: User = Depends(require_user), db=Depends(get_auth_db)):
+    if not db.query(Hotel.id).filter(Hotel.id == hotel_id).first():
+        raise HTTPException(status_code=404, detail="숙소를 찾을 수 없습니다.")
+    exists = db.query(UserFavorite.id).filter_by(user_id=user.id, hotel_id=hotel_id).first()
+    if not exists:
+        db.add(UserFavorite(user_id=user.id, hotel_id=hotel_id))
+        db.commit()
+    return {"ok": True, "hotel_id": hotel_id}
+
+
+@app.delete("/api/favorites/{hotel_id}")
+def remove_favorite(hotel_id: int, user: User = Depends(require_user), db=Depends(get_auth_db)):
+    db.query(UserFavorite).filter_by(user_id=user.id, hotel_id=hotel_id).delete(synchronize_session=False)
+    db.commit()
+    return {"ok": True, "hotel_id": hotel_id}
+
 
 # API 엔드포인트
 @app.get("/")
@@ -582,13 +749,44 @@ def get_ai_conversation(conversation_id: str):
     finally:
         db.close()
 
+
+@app.delete("/api/ai/conversations/{conversation_id}")
+def delete_ai_conversation(conversation_id: str):
+    try:
+        conversation_id = str(uuid.UUID(conversation_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="대화 ID가 올바르지 않습니다.") from exc
+
+    db = SessionLocal()
+    try:
+        conversation = db.query(AiConversation).filter(AiConversation.id == conversation_id).first()
+        if conversation is None:
+            raise HTTPException(status_code=404, detail="저장된 대화를 찾을 수 없습니다.")
+        db.query(AiConversationMessage).filter(
+            AiConversationMessage.conversation_id == conversation_id
+        ).delete(synchronize_session=False)
+        db.delete(conversation)
+        db.commit()
+        return {"id": conversation_id, "deleted": True}
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as exc:
+        db.rollback()
+        logger.exception("Could not delete AI conversation: id=%s", conversation_id)
+        raise HTTPException(status_code=500, detail="대화 기록을 삭제하지 못했습니다.") from exc
+    finally:
+        db.close()
+
 @app.get("/api/hotels")
 def get_hotels(
     page: int = Query(1, ge=1),
     limit: int = 20,
     category: str = None,
     search: str = None,
-    location: str = None 
+    location: str = None,
+    check_in: str = None,
+    check_out: str = None,
 ):
     """
     숙박 정보 조회
@@ -605,6 +803,21 @@ def get_hotels(
     - location: 위치 검색어 (이름 또는 주소)
     - search: 검색어 (이름 또는 주소)
     """
+    date_range = None
+    stay_nights = None
+    if bool(check_in) != bool(check_out):
+        raise HTTPException(status_code=400, detail="체크인과 체크아웃 날짜를 함께 입력해 주세요.")
+    if check_in and check_out:
+        try:
+            parsed_check_in = datetime.strptime(check_in, "%Y-%m-%d").date()
+            parsed_check_out = datetime.strptime(check_out, "%Y-%m-%d").date()
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="날짜는 YYYY-MM-DD 형식이어야 합니다.") from exc
+        if parsed_check_out <= parsed_check_in:
+            raise HTTPException(status_code=400, detail="체크아웃 날짜는 체크인 날짜보다 뒤여야 합니다.")
+        stay_nights = (parsed_check_out - parsed_check_in).days
+        date_range = f"{parsed_check_in.month}월 {parsed_check_in.day}일 ~ {parsed_check_out.month}월 {parsed_check_out.day}일"
+
     db = SessionLocal()
     
     try:
@@ -646,19 +859,7 @@ def get_hotels(
         # 응답 데이터 변환
         results = []
         for hotel in hotels:
-            copy = generate_copy()
-            stay_info = generate_random_stay_info(seed=hotel.id)
-            start_offset = random.randint(1, 30)
-            stay_days = random.randint(1, 7)
-            base_date = datetime.now() + timedelta(days=start_offset)
-            end_date = base_date + timedelta(days=stay_days)
-
-            date_range = f"{base_date.month}월 {base_date.day}일 ~ {end_date.day}일"
-            if base_date.month != end_date.month:
-                date_range = (
-                    f"{base_date.month}월 {base_date.day}일 ~ "
-                    f"{end_date.month}월 {end_date.day}일"
-                )
+            price = get_hotel_nightly_price(hotel.id)
 
             results.append({
                 "id": hotel.id,
@@ -668,20 +869,21 @@ def get_hotels(
                 "longitude": hotel.longitude,
                 "category": hotel.category,
                 "image_url": f"https://loremflickr.com/800/600/mansion,villa,hotel/all?lock={hotel.id}",
-                "price": random.randrange(50000, 550000, 10000),
-                "rating": round(random.uniform(3.8, 5.0), 2),
-                "reviews": random.randint(10, 300),
+                "price": price,
+                "price_per_night": price,
+                "rating": None,
+                "reviews": None,
                 "date_range": date_range,
-                "stay_nights": stay_days,
-                "description": copy["description"],
-                "urgency": copy["urgency"],
-                "urgency_message": copy["urgency"],
-                "badges": copy["badges"],
-                "hotel_type": copy["type"],
-                "max_guests": stay_info["max_guests"],
-                "bedrooms": stay_info["bedrooms"],
-                "beds": stay_info["beds"],
-                "bathrooms": stay_info["bathrooms"],
+                "stay_nights": stay_nights,
+                "description": public_hotel_description(hotel.description),
+                "urgency": None,
+                "urgency_message": None,
+                "badges": [],
+                "max_guests": None,
+                "bedrooms": None,
+                "beds": None,
+                "bathrooms": None,
+                "is_demo_data": True,
             })
         
         return {
@@ -712,15 +914,7 @@ def get_hotel_detail(hotel_id: int):
         if not hotel:
             raise HTTPException(status_code=404, detail="숙박 정보를 찾을 수 없습니다")
         
-        # 일관된 랜덤 데이터 생성 (seed 사용)
-        stay_info = generate_random_stay_info(seed=hotel.id)
-        copy = generate_copy()
-        
-        # 가격 생성 (리스트와 동일한 로직)
-        random.seed(hotel.id)
-        price = random.randrange(50000, 550000, 10000)
-        rating = round(random.uniform(3.8, 5.0), 2)
-        reviews = random.randint(10, 300)
+        price = get_hotel_nightly_price(hotel.id)
         
         return {
             "id": hotel.id,
@@ -731,19 +925,20 @@ def get_hotel_detail(hotel_id: int):
             "homepage": hotel.homepage,
             "latitude": hotel.latitude,
             "longitude": hotel.longitude,
-            "description": copy["description"],
+            "description": public_hotel_description(hotel.description),
             "content_id": hotel.content_id,
             "imageUrl": f"https://loremflickr.com/800/600/mansion,villa,hotel/all?lock={hotel.id}",
             "price": price,
             "price_per_night": price,
-            "rating": rating,
-            "reviews": reviews,
-            "max_guests": stay_info["max_guests"],
-            "bedrooms": stay_info["bedrooms"],
-            "beds": stay_info["beds"],
-            "bathrooms": stay_info["bathrooms"],
-            "badges": copy["badges"],
-            "urgency_message": copy["urgency"],
+            "rating": None,
+            "reviews": None,
+            "max_guests": None,
+            "bedrooms": None,
+            "beds": None,
+            "bathrooms": None,
+            "badges": [],
+            "urgency_message": None,
+            "is_demo_data": True,
         }
         
     finally:
@@ -751,12 +946,12 @@ def get_hotel_detail(hotel_id: int):
 
 
 def get_hotel_nightly_price(hotel_id: int) -> int:
-    # Keep checkout price consistent with the deterministic price on hotel detail.
+    # Portfolio sample amount only; not a rate supplied by the lodging business.
     return random.Random(hotel_id).randrange(50000, 550000, 10000)
 
 
 @app.post("/api/bookings")
-def create_booking(payload: BookingCreateRequest):
+def create_booking(payload: BookingCreateRequest, request: Request):
     try:
         check_in = datetime.strptime(payload.check_in, "%Y-%m-%d").date()
         check_out = datetime.strptime(payload.check_out, "%Y-%m-%d").date()
@@ -766,17 +961,29 @@ def create_booking(payload: BookingCreateRequest):
     if check_in < datetime.now().date() or check_out <= check_in:
         raise HTTPException(status_code=400, detail="유효한 체크인/체크아웃 날짜를 선택해 주세요.")
 
+    conversation_id = None
+    if payload.conversation_id:
+        try:
+            conversation_id = str(uuid.UUID(payload.conversation_id))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="대화 ID가 올바르지 않습니다.") from exc
+
     db = SessionLocal()
     try:
         hotel = db.query(Hotel).filter(Hotel.id == payload.hotel_id).first()
         if not hotel:
             raise HTTPException(status_code=404, detail="숙소를 찾을 수 없습니다.")
+        session_user_id = get_session_user_id(request)
+        account = db.query(User).filter(User.id == session_user_id).first() if session_user_id else None
+        if conversation_id and not db.query(AiConversation).filter(AiConversation.id == conversation_id).first():
+            raise HTTPException(status_code=404, detail="예약과 연결할 대화를 찾을 수 없습니다.")
 
         nights = (check_out - check_in).days
         amount = get_hotel_nightly_price(hotel.id) * nights
         order_id = f"sw_{uuid.uuid4().hex[:28]}"
         booking = Booking(
             order_id=order_id,
+            user_id=account.id if account else None,
             hotel_id=hotel.id,
             hotel_name=hotel.name,
             check_in=check_in.isoformat(),
@@ -785,6 +992,7 @@ def create_booking(payload: BookingCreateRequest):
             nights=nights,
             amount=amount,
             status="PENDING_PAYMENT",
+            conversation_id=conversation_id,
         )
         db.add(booking)
         db.commit()
@@ -807,6 +1015,39 @@ def create_booking(payload: BookingCreateRequest):
         raise HTTPException(status_code=500, detail="예약 생성에 실패했습니다.") from exc
     finally:
         db.close()
+
+
+@app.get("/api/bookings/me")
+def get_my_bookings(user: User = Depends(require_user), db=Depends(get_auth_db)):
+    bookings = (
+        db.query(Booking)
+        .filter(Booking.user_id == user.id)
+        .order_by(Booking.created_at.desc(), Booking.id.desc())
+        .all()
+    )
+    hotel_ids = {booking.hotel_id for booking in bookings}
+    hotels = {
+        hotel.id: hotel
+        for hotel in db.query(Hotel).filter(Hotel.id.in_(hotel_ids)).all()
+    } if hotel_ids else {}
+    return {
+        "bookings": [
+            {
+                "order_id": booking.order_id,
+                "hotel_id": booking.hotel_id,
+                "hotel_name": booking.hotel_name,
+                "hotel_address": hotels[booking.hotel_id].address if booking.hotel_id in hotels else None,
+                "check_in": booking.check_in,
+                "check_out": booking.check_out,
+                "guests": booking.guests,
+                "nights": booking.nights,
+                "amount": booking.amount,
+                "status": booking.status,
+                "created_at": booking.created_at,
+            }
+            for booking in bookings
+        ]
+    }
 
 
 @app.post("/api/payments/confirm")
@@ -855,11 +1096,70 @@ def confirm_payment(payload: PaymentConfirmRequest):
 
         booking.payment_key = payload.payment_key
         booking.status = "CONFIRMED"
+        if booking.conversation_id:
+            db.add(AiConversationMessage(
+                conversation_id=booking.conversation_id,
+                role="assistant",
+                content=f"테스트 결제가 승인되어 {booking.hotel_name} 예약이 접수됐어요. 실제 객실 재고와 숙소 운영자의 예약 확정은 연동되지 않은 데모 예약입니다.",
+                metadata_json=json.dumps({
+                    "booking": {
+                        "order_id": booking.order_id,
+                        "hotel_id": booking.hotel_id,
+                        "hotel_name": booking.hotel_name,
+                        "check_in": booking.check_in,
+                        "check_out": booking.check_out,
+                        "guests": booking.guests,
+                        "amount": booking.amount,
+                        "status": booking.status,
+                    }
+                }, ensure_ascii=False),
+            ))
+            conversation_record = db.query(AiConversation).filter(AiConversation.id == booking.conversation_id).first()
+            if conversation_record:
+                conversation_record.updated_at = datetime.utcnow()
         db.commit()
         return {"order_id": booking.order_id, "hotel_name": booking.hotel_name, "status": booking.status, "amount": booking.amount}
     except HTTPException:
         db.rollback()
         raise
+    finally:
+        db.close()
+
+
+@app.post("/api/payments/fail")
+def record_payment_failure(payload: PaymentFailRequest):
+    db = SessionLocal()
+    try:
+        booking = db.query(Booking).filter(Booking.order_id == payload.order_id).first()
+        if booking is None:
+            raise HTTPException(status_code=404, detail="예약 주문을 찾을 수 없습니다.")
+        if booking.status == "PENDING_PAYMENT":
+            booking.status = "PAYMENT_FAILED"
+            if booking.conversation_id:
+                db.add(AiConversationMessage(
+                    conversation_id=booking.conversation_id,
+                    role="assistant",
+                    content=f"{booking.hotel_name} 예약 결제가 완료되지 않았어요. {payload.message}",
+                    metadata_json=json.dumps({
+                        "booking": {
+                            "order_id": booking.order_id,
+                            "hotel_name": booking.hotel_name,
+                            "status": booking.status,
+                        }
+                    }, ensure_ascii=False),
+                ))
+                conversation_record = db.query(AiConversation).filter(AiConversation.id == booking.conversation_id).first()
+                if conversation_record:
+                    conversation_record.updated_at = datetime.utcnow()
+            db.commit()
+        return {"order_id": booking.order_id, "status": booking.status}
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as exc:
+        db.rollback()
+        logger.exception("Could not record payment failure: order_id=%s", payload.order_id)
+        raise HTTPException(status_code=500, detail="결제 실패 기록을 저장하지 못했습니다.") from exc
     finally:
         db.close()
 

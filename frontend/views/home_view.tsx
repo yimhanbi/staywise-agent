@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState, useRef } from "react";
+import Link from "next/link";
 import { Hotel } from "@staywise/shared-types";
 import { hotelService } from "@/services/hotelService";
 import { HotelCard } from "./components/hotel_card";
@@ -9,6 +10,8 @@ import { HotelDetailModal } from "./components/hotel_detail_modal";
 import { SearchBar } from "./components/searchbar";
 import { AiChatDrawer } from "./components/ai_chat_drawer";
 import { CATEGORIES, getCategoryValue } from "@/constants/categories";
+import { useAuth } from "@/views/auth_context";
+import { AuthModal } from "./components/auth_modal";
 
 interface HomeViewProps {
   title: string;
@@ -34,6 +37,10 @@ export const HomeView = ({ title, description }: HomeViewProps) => {
   });
   const [selectedHotel, setSelectedHotel] = useState<any | null>(null);
   const [isAiChatOpen, setIsAiChatOpen] = useState(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [favoriteError, setFavoriteError] = useState("");
+  const { user, favorites, favoriteIds, logout, toggleFavorite } = useAuth();
 
 
   //무한 스크롤을 위한 상태
@@ -169,9 +176,31 @@ export const HomeView = ({ title, description }: HomeViewProps) => {
     setSelectedHotel(hotel);
   };
 
+  const handleFavoriteClick = async (hotelId: string | number) => {
+    setFavoriteError("");
+    if (!user) {
+      setIsAuthModalOpen(true);
+      return;
+    }
+    try {
+      await toggleFavorite(hotelId);
+    } catch (error) {
+      setFavoriteError(error instanceof Error ? error.message : "좋아요를 저장하지 못했습니다.");
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+      setIsProfileOpen(false);
+    } catch (error) {
+      setFavoriteError(error instanceof Error ? error.message : "로그아웃에 실패했습니다.");
+    }
+  };
+
   return (
     <div className="max-w-[2520px] mx-auto xl:px-20 md:px-10 sm:px-2 px-4">
-      <nav className="sticky top-0 z-50 bg-white/95 backdrop-blur-sm border-b border-gray-100 pt-4 pb-8 mb-4">
+      <nav className="full-bleed-sticky-header pt-4 pb-8 mb-4">
         <div className="flex flex-col md:flex-row items-center justify-between gap-6">
           <div
             className="text-[#0F766E] font-extrabold text-2xl tracking-tighter cursor-pointer"
@@ -207,15 +236,39 @@ export const HomeView = ({ title, description }: HomeViewProps) => {
             </button>
           </div>
 
-          <div className="hidden md:block w-[100px] text-right">
+          <div className="relative flex shrink-0 items-center gap-2">
             <button
               type="button"
-              className="text-sm font-semibold p-2 hover:bg-gray-100 rounded-full"
-              title={title}
-              aria-label={description}
+              onClick={() => setIsProfileOpen((open) => !open)}
+              aria-label="프로필 및 좋아요한 숙소"
+              aria-expanded={isProfileOpen}
+              className="grid h-10 w-10 place-items-center rounded-full bg-[#F2F2F2] text-gray-700 transition hover:bg-[#E8E8E8]"
             >
-              로그인
+              <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                <circle cx="12" cy="12" r="9.25" />
+                <circle cx="12" cy="9" r="3.1" />
+                <path strokeLinecap="round" d="M5.8 18.7c1.2-2.8 3.3-4.2 6.2-4.2s5 1.4 6.2 4.2" />
+              </svg>
             </button>
+
+            {isProfileOpen && (
+              <section className="absolute right-0 top-full z-[70] mt-3 w-60 max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-gray-100 bg-white py-1 text-left shadow-[0_12px_40px_rgba(0,0,0,0.16)]" aria-label="프로필 메뉴">
+                <Link href="/" onClick={() => setIsProfileOpen(false)} className="block px-4 py-3 text-sm text-gray-700 transition hover:bg-gray-50">숙소 둘러보기</Link>
+                {user ? (
+                  <>
+                    <Link href="/favorites" onClick={() => setIsProfileOpen(false)} className="flex items-center justify-between px-4 py-3 text-sm text-gray-700 transition hover:bg-gray-50">
+                      <span>좋아요한 숙소</span><span className="text-xs text-gray-400">{favorites.length}</span>
+                    </Link>
+                    <Link href="/bookings" onClick={() => setIsProfileOpen(false)} className="block px-4 py-3 text-sm text-gray-700 transition hover:bg-gray-50">예약 내역</Link>
+                    <div className="my-1 border-t border-gray-100" />
+                    <p className="truncate px-4 py-2 text-xs text-gray-500">{user.email}</p>
+                    <button type="button" onClick={() => void handleLogout()} className="w-full px-4 py-3 text-left text-sm text-gray-700 transition hover:bg-gray-50">로그아웃</button>
+                  </>
+                ) : (
+                  <button type="button" onClick={() => { setIsProfileOpen(false); setIsAuthModalOpen(true); }} className="w-full px-4 py-3 text-left text-sm font-semibold text-gray-900 transition hover:bg-gray-50">로그인 / 회원가입</button>
+                )}
+              </section>
+            )}
           </div>
         </div>
 
@@ -238,7 +291,12 @@ export const HomeView = ({ title, description }: HomeViewProps) => {
         </div>
       </nav>
 
+      <p className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-900">
+        포트폴리오 데모 데이터입니다. 숙소명·주소는 공공 숙박 정보이며, 사진은 예시 이미지입니다. 요금은 예시 금액이고 평점·객실 정보·실시간 예약 가능 여부는 제공되지 않습니다.
+      </p>
+
       {/* 그리드 영역 */}
+      {favoriteError && <p role="alert" className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-700">{favoriteError}</p>}
       <div className="pb-10 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-8">
         {hotels.map((hotel, index) => {
           // 중복 키 방지를 위해 hotel.id와 index를 조합
@@ -247,11 +305,11 @@ export const HomeView = ({ title, description }: HomeViewProps) => {
           if (hotels.length === index + 1) {
             return (
               <div ref={lastHotelElementRef} key={uniqueKey}>
-                <HotelCard hotel={hotel} onClick={() => handleHotelCardClick(hotel)} />
+                <HotelCard hotel={hotel} onClick={() => handleHotelCardClick(hotel)} isFavorite={favoriteIds.has(String(hotel.id))} onFavoriteClick={handleFavoriteClick} />
               </div>
             );
           } else {
-            return <HotelCard key={uniqueKey} hotel={hotel} onClick={() => handleHotelCardClick(hotel)} />;
+            return <HotelCard key={uniqueKey} hotel={hotel} onClick={() => handleHotelCardClick(hotel)} isFavorite={favoriteIds.has(String(hotel.id))} onFavoriteClick={handleFavoriteClick} />;
           }
         })}
         
@@ -278,11 +336,12 @@ export const HomeView = ({ title, description }: HomeViewProps) => {
       <AiChatDrawer
         isOpen={isAiChatOpen}
         onClose={() => setIsAiChatOpen(false)}
-        onStartBooking={(hotel, search) => {
+        onStartBooking={(hotel, search, conversationId) => {
           const params = new URLSearchParams({ hotelId: String(hotel.id) });
           if (search?.checkIn) params.set("checkIn", search.checkIn);
           if (search?.checkOut) params.set("checkOut", search.checkOut);
           if (search?.guests) params.set("guests", String(search.guests));
+          if (conversationId) params.set("conversationId", conversationId);
           window.location.href = `/checkout?${params.toString()}`;
         }}
         onSelectHotel={(hotel) => {
@@ -304,6 +363,7 @@ export const HomeView = ({ title, description }: HomeViewProps) => {
           setIsAiChatOpen(false);
         }}
       />
+      {isAuthModalOpen && <AuthModal onClose={() => setIsAuthModalOpen(false)} />}
     </div>
   );
 };

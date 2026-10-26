@@ -2,6 +2,28 @@
 @import "tailwindcss";
 @import "react-day-picker/style.css";
 
+.full-bleed-sticky-header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  isolation: isolate;
+}
+
+.full-bleed-sticky-header::before {
+  position: absolute;
+  z-index: -1;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 100vw;
+  transform: translateX(-50%);
+  border-bottom: 1px solid rgb(243 244 246 / 0.9);
+  background: rgb(255 255 255 / 0.96);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  content: "";
+}
+
 /* Date picker (react-day-picker) custom styles */
 .rdp-day {
   color: #000000 !important;
