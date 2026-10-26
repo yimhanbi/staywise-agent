@@ -76,6 +76,7 @@ def http_get_json(url: str, timeout: float) -> dict[str, Any]:
 
 @mcp.tool()
 def health_check() -> dict[str, Any]:
+    """Check whether the Staywise hotel API is reachable."""
     base = backend_api_base_url()
     try:
         _ = http_get_json(f"{base}/hotels?page=1", upstream_timeout_seconds())
@@ -102,6 +103,11 @@ def search_hotels(
     category: str | None = None,
     page: int = 1,
 ) -> dict[str, Any]:
+    """Search the hotel catalogue by location and category with pagination.
+
+    Dates and guest count are validated and forwarded, but room availability is
+    not checked because booking inventory is not implemented yet.
+    """
     try:
         in_date = parse_iso_date(check_in, "check_in") if check_in else None
         out_date = parse_iso_date(check_out, "check_out") if check_out else None
@@ -172,6 +178,7 @@ def search_hotels(
 
 @mcp.tool()
 def get_hotel_detail(hotel_id: int) -> dict[str, Any]:
+    """Get the details for one hotel by its numeric ID."""
     if hotel_id < 1:
         return make_error(
             "INVALID_INPUT",

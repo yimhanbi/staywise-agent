@@ -14,21 +14,10 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const KAKAO_KEY =
-    process.env.NEXT_PUBLIC_KAKAO_MAP_API_KEY ??
-    process.env.NEXT_PUBLIC_KAKAO_MAP_CLIENT_ID;
-
 return (
     <html lang="ko">
-      <head>
-        {KAKAO_KEY ? (
-          <Script
-            src={`//dapi.kakao.com/v2/maps/sdk.js?appkey=${KAKAO_KEY}&libraries=services&autoload=false`}
-            strategy="beforeInteractive"
-          />
-        ) : null}
-      </head>
       <body className="antialiased">
+        <Script src="https://js.tosspayments.com/v2/standard" strategy="afterInteractive" />
         <Providers>
           <AiDisclosureLayout>{children}</AiDisclosureLayout>
         </Providers>

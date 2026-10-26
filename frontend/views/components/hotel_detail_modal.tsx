@@ -1,6 +1,7 @@
 import type { MouseEvent } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import KakaoMap from "@/components/KakaoMap";
+import { getHotelImage } from "@/lib/hotel-images";
 
 interface HotelDetailModalProps {
   hotel: any | null;
@@ -10,13 +11,15 @@ interface HotelDetailModalProps {
 
 export const HotelDetailModal = ({ hotel, isOpen, onClose }: HotelDetailModalProps) => {
   const hotelIdNum = Number(hotel?.id) || 0;
-  const latitude = Number(hotel?.latitude ?? hotel?.mapy);
-  const longitude = Number(hotel?.longitude ?? hotel?.mapx);
+  const galleryImages = [0, 1, 2, 3, 4].map((variant) => getHotelImage(hotelIdNum, variant));
+  const rawLatitude = hotel?.latitude ?? hotel?.mapy;
+  const rawLongitude = hotel?.longitude ?? hotel?.mapx;
+  const latitude = rawLatitude == null || rawLatitude === "" ? undefined : Number(rawLatitude);
+  const longitude = rawLongitude == null || rawLongitude === "" ? undefined : Number(rawLongitude);
   const hasValidLocation = Number.isFinite(latitude) && Number.isFinite(longitude);
 
   if (isOpen && hotel) {
-    console.log("현재 숙소 데이터: ",hotel);
-    console.log("좌표 체크: ", hotel.mapx, hotel.mapy);
+    console.log("현재 숙소 좌표: ", latitude, longitude);
   }
   
 
@@ -65,42 +68,58 @@ export const HotelDetailModal = ({ hotel, isOpen, onClose }: HotelDetailModalPro
               <div className="grid grid-cols-4 gap-2 h-[300px] md:h-[450px] w-full p-4">
                 <div className="col-span-2 row-span-2 relative overflow-hidden rounded-l-2xl">
                   <img
-                    src={`https://loremflickr.com/800/800/mansion,hotel/all?lock=${hotelIdNum}`}
+                    src={galleryImages[0]}
                     className="w-full h-full object-cover hover:scale-105 transition duration-500"
                     alt={hotel.name}
                     onError={(e) => {
                       const img = e.currentTarget;
                       img.onerror = null;
-                      img.src = hotel.image_url ?? hotel.imageUrl ?? `https://loremflickr.com/800/600/mansion,villa,hotel/all?lock=${hotelIdNum}`;
+                      img.src = getHotelImage(hotelIdNum, 5);
                     }}
                   />
                 </div>
                 <div className="col-span-1 h-full relative overflow-hidden">
                   <img
-                    src={`https://loremflickr.com/600/400/bedroom,interior/all?lock=${hotelIdNum + 10}`}
+                    src={galleryImages[1]}
                     className="w-full h-full object-cover hover:scale-105 transition duration-500"
-                    alt={`${hotel.name} gallery 1`}
+                    alt={`${hotel.name} 갤러리 1`}
+                    onError={(e) => {
+                      e.currentTarget.onerror = null;
+                      e.currentTarget.src = getHotelImage(hotelIdNum, 6);
+                    }}
                   />
                 </div>
                 <div className="col-span-1 h-full relative overflow-hidden rounded-tr-2xl">
                   <img
-                    src={`https://loremflickr.com/600/400/livingroom,luxury/all?lock=${hotelIdNum + 20}`}
+                    src={galleryImages[2]}
                     className="w-full h-full object-cover hover:scale-105 transition duration-500"
-                    alt={`${hotel.name} gallery 2`}
+                    alt={`${hotel.name} 갤러리 2`}
+                    onError={(e) => {
+                      e.currentTarget.onerror = null;
+                      e.currentTarget.src = getHotelImage(hotelIdNum, 7);
+                    }}
                   />
                 </div>
                 <div className="col-span-1 h-full relative overflow-hidden">
                   <img
-                    src={`https://loremflickr.com/600/400/pool,villa/all?lock=${hotelIdNum + 30}`}
+                    src={galleryImages[3]}
                     className="w-full h-full object-cover hover:scale-105 transition duration-500"
-                    alt={`${hotel.name} gallery 3`}
+                    alt={`${hotel.name} 갤러리 3`}
+                    onError={(e) => {
+                      e.currentTarget.onerror = null;
+                      e.currentTarget.src = getHotelImage(hotelIdNum, 8);
+                    }}
                   />
                 </div>
                 <div className="col-span-1 h-full relative overflow-hidden rounded-br-2xl">
                   <img
-                    src={`https://loremflickr.com/600/400/bathroom,modern/all?lock=${hotelIdNum + 40}`}
+                    src={galleryImages[4]}
                     className="w-full h-full object-cover hover:scale-105 transition duration-500"
-                    alt={`${hotel.name} gallery 4`}
+                    alt={`${hotel.name} 갤러리 4`}
+                    onError={(e) => {
+                      e.currentTarget.onerror = null;
+                      e.currentTarget.src = getHotelImage(hotelIdNum, 9);
+                    }}
                   />
                 </div>
               </div>
@@ -217,7 +236,10 @@ export const HotelDetailModal = ({ hotel, isOpen, onClose }: HotelDetailModalPro
                       </div>
                     </div>
 
-                    <button className="w-full bg-[#0F766E] text-white py-3.5 rounded-xl font-bold text-lg hover:bg-[#115E59] transition-colors shadow-lg active:scale-95 transition-transform">
+                    <button
+                      onClick={() => { window.location.href = `/checkout?hotelId=${hotelIdNum}`; }}
+                      className="w-full bg-[#0F766E] text-white py-3.5 rounded-xl font-bold text-lg hover:bg-[#115E59] transition-colors shadow-lg active:scale-95 transition-transform"
+                    >
                       예약하기
                     </button>
 

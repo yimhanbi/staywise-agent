@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 const backendBaseUrl =
   process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/api\/?$/, "") ??
-  "http://localhost:8000";
+  "http://127.0.0.1:8000";
 
 const nextConfig: NextConfig = {
   async rewrites() {

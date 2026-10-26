@@ -104,7 +104,10 @@ export default function HotelDetailPage() {
               <span className="text-neutral-500 text-sm">/ 박</span>
             </div>
 
-            <button className="w-full bg-rose-500 text-white py-4 rounded-xl text-lg font-bold hover:bg-rose-600 transition-all active:scale-95">
+            <button
+              onClick={() => { window.location.href = `/checkout?hotelId=${encodeURIComponent(id)}`; }}
+              className="w-full bg-rose-500 text-white py-4 rounded-xl text-lg font-bold hover:bg-rose-600 transition-all active:scale-95"
+            >
               예약하기
             </button>
 

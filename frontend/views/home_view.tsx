@@ -7,6 +7,7 @@ import { HotelCard } from "./components/hotel_card";
 import { HotelSkeleton } from "./components/hotel_skeleton";
 import { HotelDetailModal } from "./components/hotel_detail_modal";
 import { SearchBar } from "./components/searchbar";
+import { AiChatDrawer } from "./components/ai_chat_drawer";
 import { CATEGORIES, getCategoryValue } from "@/constants/categories";
 
 interface HomeViewProps {
@@ -31,6 +32,7 @@ export const HomeView = ({ title, description }: HomeViewProps) => {
     children: 0,
   });
   const [selectedHotel, setSelectedHotel] = useState<any | null>(null);
+  const [isAiChatOpen, setIsAiChatOpen] = useState(false);
 
 
   //무한 스크롤을 위한 상태
@@ -177,11 +179,23 @@ export const HomeView = ({ title, description }: HomeViewProps) => {
             Staywise
           </div>
 
-          <SearchBar
-            searchQuery={searchQuery}
-            onSearchQueryChange={setSearchQuery}
-            onSearch={handleSearch}
-          />
+          <div className="flex w-full max-w-[980px] items-center gap-3">
+            <SearchBar
+              searchQuery={searchQuery}
+              onSearchQueryChange={setSearchQuery}
+              onSearch={handleSearch}
+            />
+            <button
+              type="button"
+              onClick={() => setIsAiChatOpen(true)}
+              className="flex h-12 shrink-0 items-center gap-2 rounded-full bg-[#0F766E] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#115E59]"
+              aria-label="AI에게 숙소 추천받기"
+            >
+              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 3.5 14.1 9l5.4 2.1-5.4 2.1-2.1 5.3-2.1-5.3L4.5 11.1 9.9 9 12 3.5Z" /><path d="m19 15 .9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9L19 15Z" /></svg>
+              <span className="hidden sm:inline">AI에게 물어보기</span>
+              <span className="sm:hidden">AI</span>
+            </button>
+          </div>
 
           <div className="hidden md:block w-[100px] text-right">
             <button
@@ -244,6 +258,35 @@ export const HomeView = ({ title, description }: HomeViewProps) => {
         hotel={selectedHotel}
         isOpen={Boolean(selectedHotel)}
         onClose={() => setSelectedHotel(null)}
+      />
+      <AiChatDrawer
+        isOpen={isAiChatOpen}
+        onClose={() => setIsAiChatOpen(false)}
+        onStartBooking={(hotel, search) => {
+          const params = new URLSearchParams({ hotelId: String(hotel.id) });
+          if (search?.checkIn) params.set("checkIn", search.checkIn);
+          if (search?.checkOut) params.set("checkOut", search.checkOut);
+          if (search?.guests) params.set("guests", String(search.guests));
+          window.location.href = `/checkout?${params.toString()}`;
+        }}
+        onSelectHotel={(hotel) => {
+          setIsAiChatOpen(false);
+          setSelectedHotel(hotel);
+        }}
+        onApplySearch={(search) => {
+          const nextCategory = search.category ?? "전체";
+          const nextFilters: SearchFilters = {
+            ...searchFilters,
+            adults: search.guests ?? searchFilters.adults,
+          };
+          setSearchQuery(search.location ?? "");
+          setActiveCategory(nextCategory);
+          setSearchFilters(nextFilters);
+          setPage(1);
+          setHotels([]);
+          fetchLoadHotels(search.location, nextCategory, 1, nextFilters);
+          setIsAiChatOpen(false);
+        }}
       />
     </div>
   );

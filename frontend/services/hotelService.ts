@@ -8,49 +8,138 @@ interface HotelListResponse {
   count: number;
 }
 
+export interface AiChatTurn {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface AiChatResponse {
+  reply: string;
+  hotels: Hotel[];
+  total: number;
+  search?: { location?: string; category?: string; guests?: number; check_in?: string; check_out?: string } | null;
+}
+
+export type AiChatStreamEvent =
+  | { type: "progress"; message: string }
+  | { type: "token"; text: string }
+  | { type: "reset" };
+
+function parseEventBlock(block: string): { event: string; data: unknown } | null {
+  let event = "message";
+  const dataLines: string[] = [];
+  for (const line of block.split("\n")) {
+    if (line.startsWith("event:")) event = line.slice(6).trim();
+    if (line.startsWith("data:")) dataLines.push(line.slice(5).trimStart());
+  }
+  if (!dataLines.length) return null;
+  return { event, data: JSON.parse(dataLines.join("\n")) as unknown };
+}
+
 export const hotelService = {
+  async sendAiMessage(
+    messages: AiChatTurn[],
+    onEvent?: (event: AiChatStreamEvent) => void,
+  ): Promise<AiChatResponse> {
+    const url = buildApiUrl("/ai/chat");
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages }),
+      });
+    } catch (error) {
+      throw new Error(`AI 대화 서버에 연결할 수 없습니다. [${url}]`, {
+        cause: error as Error,
+      });
+    }
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "");
+      let detail = errorText;
+      try {
+        detail = JSON.parse(errorText).detail ?? errorText;
+      } catch {
+        // Preserve a plain-text error response.
+      }
+      throw new Error(`AI 대화 요청 실패 (${response.status}): ${detail}`);
+    }
+    if (!response.headers.get("content-type")?.includes("text/event-stream")) {
+      return (await response.json()) as AiChatResponse;
+    }
+
+    if (!response.body) throw new Error("AI 응답 스트림을 읽을 수 없습니다.");
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let result: AiChatResponse | undefined;
+    let streamError = "";
+
+    const consumeBlock = (block: string) => {
+      const parsed = parseEventBlock(block);
+      if (!parsed) return;
+      if (parsed.event === "progress") {
+        const progress = parsed.data as { message?: string };
+        if (progress.message) onEvent?.({ type: "progress", message: progress.message });
+      } else if (parsed.event === "token") {
+        const token = parsed.data as { text?: string };
+        if (token.text) onEvent?.({ type: "token", text: token.text });
+      } else if (parsed.event === "reset") {
+        onEvent?.({ type: "reset" });
+      } else if (parsed.event === "result") {
+        result = parsed.data as AiChatResponse;
+      } else if (parsed.event === "error") {
+        streamError = (parsed.data as { message?: string }).message ?? "AI 응답 생성에 실패했습니다.";
+      }
+    };
+
+    while (true) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value, { stream: !done }).replace(/\r\n/g, "\n");
+      let separator = buffer.indexOf("\n\n");
+      while (separator >= 0) {
+        consumeBlock(buffer.slice(0, separator));
+        buffer = buffer.slice(separator + 2);
+        separator = buffer.indexOf("\n\n");
+      }
+      if (done) break;
+    }
+    if (buffer.trim()) consumeBlock(buffer);
+    if (streamError) throw new Error(streamError);
+    if (!result) throw new Error("AI 응답 스트림이 결과 없이 종료됐습니다.");
+    return result;
+  },
+
   async fetchHotels(
     params: SearchParamsInput = {},
   ): Promise<HotelListResponse> {
     const normalizedParams = SearchParamsSchema.parse(params);
-    const query = new URLSearchParams();
-
-    if (normalizedParams.location) {
-      query.append("location", normalizedParams.location);
-    }
-    if (normalizedParams.category && normalizedParams.category !== "전체") {
-      query.append("category", normalizedParams.category);
-    }
-
-    if (normalizedParams.checkIn) {
-      query.append("check_in", normalizedParams.checkIn);
-    }
-    if (normalizedParams.checkOut) {
-      query.append("check_out", normalizedParams.checkOut);
-    }
-
     const adults = normalizedParams.adults ?? 0;
     const children = normalizedParams.children ?? 0;
     const guests = adults + children;
-    if (guests > 0) {
-      query.append("guests", String(guests));
-    }
     const pageCandidate = (params as SearchParamsInput & { page?: number }).page;
     const page =
       typeof pageCandidate === "number" && Number.isFinite(pageCandidate) && pageCandidate > 0
         ? Math.floor(pageCandidate)
         : 1;
-    query.append("page", page.toString());
-
-    const queryString = query.toString();
-    const baseUrl = buildApiUrl("/hotels");
-    const url = queryString ? `${baseUrl}?${queryString}` : baseUrl;
+    const url = buildApiUrl("/ai/search");
 
     let response: Response;
     try {
       response = await fetch(url, {
-        method: "GET",
+        method: "POST",
         headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          location: normalizedParams.location,
+          category:
+            normalizedParams.category && normalizedParams.category !== "전체"
+              ? normalizedParams.category
+              : undefined,
+          check_in: normalizedParams.checkIn,
+          check_out: normalizedParams.checkOut,
+          guests: guests > 0 ? guests : undefined,
+          page,
+        }),
       });
     } catch (error) {
       throw new Error(`Failed to fetch hotels (network error) [${url}]`, {
@@ -69,7 +158,7 @@ export const hotelService = {
   },
 
   async getHotelById(id: string): Promise<Hotel> {
-    const url = buildApiUrl(`/hotels/${id}`);
+    const url = buildApiUrl(`/mcp/hotels/${id}`);
     const response = await fetch(url);
     if (!response.ok) {
       const errorText = await response.text().catch(() => "");

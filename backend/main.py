@@ -1,11 +1,56 @@
-from fastapi import FastAPI, HTTPException,Query
+from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from dotenv import load_dotenv
+import asyncio
 import os
 import random
+import json
+import math
+import urllib.error
+import urllib.parse
+import urllib.request
+import logging
+import base64
+import uuid
 from datetime import datetime, timedelta
+from pydantic import BaseModel, Field
+from typing import Literal, Optional
+from mcp_client import call_mcp_tool
+from ollama_agent import run_agent
+
+
+class AiSearchRequest(BaseModel):
+    location: Optional[str] = None
+    check_in: Optional[str] = None
+    check_out: Optional[str] = None
+    guests: Optional[int] = Field(default=None, ge=1)
+    category: Optional[str] = None
+    page: int = Field(default=1, ge=1)
+
+
+class AiChatTurn(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=2000)
+
+
+class AiChatRequest(BaseModel):
+    messages: list[AiChatTurn] = Field(max_length=16)
+
+
+class BookingCreateRequest(BaseModel):
+    hotel_id: int = Field(gt=0)
+    check_in: str
+    check_out: str
+    guests: int = Field(ge=1, le=20)
+
+
+class PaymentConfirmRequest(BaseModel):
+    payment_key: str = Field(min_length=1, max_length=200)
+    order_id: str = Field(min_length=6, max_length=64)
+    amount: int = Field(gt=0)
 
 TYPE_DESCRIPTIONS = {
     "city": [
@@ -96,6 +141,221 @@ load_dotenv()
 
 # FastAPI 앱 생성
 app = FastAPI(title="StayWise API")
+logger = logging.getLogger("staywise.ai")
+
+
+def raise_mcp_tool_error(result):
+    if isinstance(result, dict) and "error" in result:
+        error = result["error"]
+        code = error.get("code", "INTERNAL_ERROR")
+
+        status_code = 500
+        if code == "INVALID_INPUT":
+            status_code = 400
+        elif code == "NOT_FOUND":
+            status_code = 404
+        elif code == "UPSTREAM_ERROR":
+            status_code = 502
+
+        raise HTTPException(status_code=status_code, detail=error)
+
+
+async def call_mcp_api(tool_name: str, arguments: dict):
+    logger.info("MCP tool call started: tool=%s", tool_name)
+    try:
+        result = await call_mcp_tool(tool_name, arguments)
+    except Exception as exc:
+        logger.exception("MCP tool call crashed: tool=%s", tool_name)
+        raise HTTPException(
+            status_code=502,
+            detail={"code": "MCP_CALL_FAILED", "message": type(exc).__name__},
+        ) from exc
+
+    if isinstance(result, dict) and "error" in result:
+        error = result["error"]
+        logger.error(
+            "MCP tool returned an error: tool=%s code=%s",
+            tool_name,
+            error.get("code", "UNKNOWN"),
+        )
+    else:
+        logger.info("MCP tool call succeeded: tool=%s", tool_name)
+    raise_mcp_tool_error(result)
+    return result
+
+
+@app.post("/api/ai/search")
+async def ai_search_hotels(payload: AiSearchRequest):
+    return await call_mcp_api(
+        "search_hotels",
+        {
+            "location": payload.location,
+            "check_in": payload.check_in,
+            "check_out": payload.check_out,
+            "guests": payload.guests,
+            "category": payload.category,
+            "page": payload.page,
+        },
+    )
+
+
+@app.post("/api/ai/chat")
+async def ai_chat(payload: AiChatRequest):
+    if payload.messages and payload.messages[-1].role != "user":
+        raise HTTPException(status_code=400, detail="마지막 대화는 사용자 메시지여야 합니다.")
+
+    async def stream_chat():
+        loop = asyncio.get_running_loop()
+        progress_queue: asyncio.Queue[tuple[str, dict]] = asyncio.Queue()
+
+        def notify_progress(message: str):
+            loop.call_soon_threadsafe(
+                progress_queue.put_nowait, ("progress", {"message": message})
+            )
+
+        def notify_token(text: str):
+            loop.call_soon_threadsafe(
+                progress_queue.put_nowait, ("token", {"text": text})
+            )
+
+        def reset_draft():
+            loop.call_soon_threadsafe(progress_queue.put_nowait, ("reset", {}))
+
+        def sse_event(event: str, payload: dict) -> str:
+            return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+        logger.info("AI chat started: turns=%d", len(payload.messages))
+        notify_progress("대화 요청을 처리하고 있어요…")
+        task = asyncio.create_task(
+            run_agent(
+                [message.model_dump() for message in payload.messages],
+                call_mcp_api,
+                on_progress=notify_progress,
+                on_token=notify_token,
+                on_reset=reset_draft,
+            )
+        )
+        try:
+            while not task.done():
+                try:
+                    event, data = await asyncio.wait_for(progress_queue.get(), timeout=8)
+                    yield sse_event(event, data)
+                except asyncio.TimeoutError:
+                    yield sse_event("progress", {"message": "모델 응답을 기다리고 있어요…"})
+
+            result = await task
+            logger.info("AI chat completed: hotels=%d", len(result.get("hotels", [])))
+            yield sse_event("result", result)
+        except RuntimeError as exc:
+            logger.error("AI chat dependency error: %s", exc)
+            yield sse_event("error", {"message": str(exc)})
+        except Exception as exc:
+            logger.exception("AI chat crashed: error_type=%s", type(exc).__name__)
+            yield sse_event(
+                "error",
+                {"message": "AI 채팅 처리 중 오류가 발생했습니다. 백엔드 터미널 로그를 확인해 주세요."},
+            )
+
+    return StreamingResponse(
+        stream_chat(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.get("/api/mcp/health")
+async def mcp_health_check():
+    return await call_mcp_api("health_check", {})
+
+
+@app.get("/api/mcp/hotels/{hotel_id}")
+async def mcp_get_hotel_detail(hotel_id: int):
+    return await call_mcp_api("get_hotel_detail", {"hotel_id": hotel_id})
+
+
+def kakao_rest_request(url: str, accept: str) -> bytes:
+    rest_key = os.getenv("KAKAO_REST_API_KEY", "").strip()
+    if not rest_key:
+        raise HTTPException(
+            status_code=503,
+            detail="KAKAO_REST_API_KEY가 backend/.env에 설정되지 않았습니다.",
+        )
+
+    request = urllib.request.Request(
+        url,
+        headers={"Authorization": f"KakaoAK {rest_key}", "Accept": accept},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=10) as upstream:
+            return upstream.read()
+    except urllib.error.HTTPError as exc:
+        if exc.code in (401, 403):
+            raise HTTPException(
+                status_code=502,
+                detail="카카오 REST API 인증에 실패했습니다. REST API 키와 카카오맵 API 사용 설정을 확인해 주세요.",
+            ) from exc
+        raise HTTPException(
+            status_code=502,
+            detail=f"카카오 정적 지도 요청에 실패했습니다 (HTTP {exc.code}).",
+        ) from exc
+    except (urllib.error.URLError, TimeoutError) as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="카카오 REST API에 연결할 수 없습니다.",
+        ) from exc
+
+
+@app.get("/api/maps/static")
+def get_kakao_static_map(
+    latitude: Optional[float] = Query(default=None),
+    longitude: Optional[float] = Query(default=None),
+    address: Optional[str] = Query(default=None, max_length=500),
+):
+    """Return a Kakao static map image through the server-side REST API."""
+    if (latitude is None) != (longitude is None):
+        raise HTTPException(status_code=400, detail="latitude와 longitude를 함께 전달해야 합니다.")
+
+    if latitude is not None and longitude is not None:
+        if (
+            not math.isfinite(latitude)
+            or not math.isfinite(longitude)
+            or not -90 <= latitude <= 90
+            or not -180 <= longitude <= 180
+        ):
+            raise HTTPException(status_code=400, detail="유효하지 않은 좌표입니다.")
+        lat, lng = latitude, longitude
+    elif address and address.strip():
+        geocode_url = "https://dapi.kakao.com/v2/local/search/address.json?" + urllib.parse.urlencode(
+            {"query": address.strip()}
+        )
+        try:
+            geocode_response = kakao_rest_request(geocode_url, "application/json")
+            documents = json.loads(geocode_response).get("documents", [])
+        except (json.JSONDecodeError, AttributeError) as exc:
+            raise HTTPException(status_code=502, detail="카카오 주소 검색 응답을 해석할 수 없습니다.") from exc
+        if not documents:
+            raise HTTPException(status_code=404, detail="주소에서 지도 좌표를 찾지 못했습니다.")
+        lat = float(documents[0]["y"])
+        lng = float(documents[0]["x"])
+    else:
+        raise HTTPException(status_code=400, detail="좌표 또는 주소가 필요합니다.")
+
+    center = f"{lng},{lat}"
+    map_url = "https://dapi.kakao.com/v2/maps/staticmap?" + urllib.parse.urlencode(
+        {
+            "center": center,
+            "markers": f"location:{center}|option:false",
+            "size": "640x400",
+            "lv": "3",
+            "scale": "2",
+        }
+    )
+    image_bytes = kakao_rest_request(map_url, "image/png")
+    return Response(
+        content=image_bytes,
+        media_type="image/png",
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
 
 # CORS 설정 (Next.js 프론트엔드와 통신)
 app.add_middleware(
@@ -133,6 +393,23 @@ class Hotel(Base):
     longitude = Column(Float)
     description = Column(Text)
     content_id = Column(String(50), unique=True)
+
+
+class Booking(Base):
+    __tablename__ = "bookings"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    order_id = Column(String(64), unique=True, nullable=False, index=True)
+    hotel_id = Column(Integer, nullable=False, index=True)
+    hotel_name = Column(String(255), nullable=False)
+    check_in = Column(String(10), nullable=False)
+    check_out = Column(String(10), nullable=False)
+    guests = Column(Integer, nullable=False)
+    nights = Column(Integer, nullable=False)
+    amount = Column(Integer, nullable=False)
+    status = Column(String(32), nullable=False, default="PENDING_PAYMENT")
+    payment_key = Column(String(200), unique=True, nullable=True)
+    created_at = Column(String(32), nullable=False, default=lambda: datetime.utcnow().isoformat())
 
 
 # 테이블이 없으면 생성 (앱 시작 시 한 번)
@@ -226,6 +503,8 @@ def get_hotels(
                 "id": hotel.id,
                 "name": hotel.name,
                 "address": hotel.address,
+                "latitude": hotel.latitude,
+                "longitude": hotel.longitude,
                 "category": hotel.category,
                 "image_url": f"https://loremflickr.com/800/600/mansion,villa,hotel/all?lock={hotel.id}",
                 "price": random.randrange(50000, 550000, 10000),
@@ -306,6 +585,120 @@ def get_hotel_detail(hotel_id: int):
             "urgency_message": copy["urgency"],
         }
         
+    finally:
+        db.close()
+
+
+def get_hotel_nightly_price(hotel_id: int) -> int:
+    # Keep checkout price consistent with the deterministic price on hotel detail.
+    return random.Random(hotel_id).randrange(50000, 550000, 10000)
+
+
+@app.post("/api/bookings")
+def create_booking(payload: BookingCreateRequest):
+    try:
+        check_in = datetime.strptime(payload.check_in, "%Y-%m-%d").date()
+        check_out = datetime.strptime(payload.check_out, "%Y-%m-%d").date()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="체크인/체크아웃 날짜 형식은 YYYY-MM-DD여야 합니다.") from exc
+
+    if check_in < datetime.now().date() or check_out <= check_in:
+        raise HTTPException(status_code=400, detail="유효한 체크인/체크아웃 날짜를 선택해 주세요.")
+
+    db = SessionLocal()
+    try:
+        hotel = db.query(Hotel).filter(Hotel.id == payload.hotel_id).first()
+        if not hotel:
+            raise HTTPException(status_code=404, detail="숙소를 찾을 수 없습니다.")
+
+        nights = (check_out - check_in).days
+        amount = get_hotel_nightly_price(hotel.id) * nights
+        order_id = f"sw_{uuid.uuid4().hex[:28]}"
+        booking = Booking(
+            order_id=order_id,
+            hotel_id=hotel.id,
+            hotel_name=hotel.name,
+            check_in=check_in.isoformat(),
+            check_out=check_out.isoformat(),
+            guests=payload.guests,
+            nights=nights,
+            amount=amount,
+            status="PENDING_PAYMENT",
+        )
+        db.add(booking)
+        db.commit()
+        return {
+            "order_id": order_id,
+            "hotel_name": hotel.name,
+            "check_in": check_in.isoformat(),
+            "check_out": check_out.isoformat(),
+            "guests": payload.guests,
+            "nights": nights,
+            "amount": amount,
+            "status": booking.status,
+        }
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as exc:
+        db.rollback()
+        logger.exception("Booking creation failed")
+        raise HTTPException(status_code=500, detail="예약 생성에 실패했습니다.") from exc
+    finally:
+        db.close()
+
+
+@app.post("/api/payments/confirm")
+def confirm_payment(payload: PaymentConfirmRequest):
+    secret_key = os.getenv("TOSS_SECRET_KEY", "").strip()
+    if not secret_key:
+        raise HTTPException(status_code=503, detail="백엔드 TOSS_SECRET_KEY가 설정되지 않았습니다.")
+
+    db = SessionLocal()
+    try:
+        booking = db.query(Booking).filter(Booking.order_id == payload.order_id).with_for_update().first()
+        if not booking:
+            raise HTTPException(status_code=404, detail="예약 주문을 찾을 수 없습니다.")
+        if booking.amount != payload.amount:
+            raise HTTPException(status_code=400, detail="결제 금액이 예약 금액과 일치하지 않습니다.")
+        if booking.status == "CONFIRMED" and booking.payment_key == payload.payment_key:
+            return {"order_id": booking.order_id, "status": booking.status, "amount": booking.amount}
+        if booking.status != "PENDING_PAYMENT":
+            raise HTTPException(status_code=409, detail="결제 가능한 예약 상태가 아닙니다.")
+
+        auth = base64.b64encode(f"{secret_key}:".encode()).decode()
+        request = urllib.request.Request(
+            "https://api.tosspayments.com/v1/payments/confirm",
+            data=json.dumps({
+                "paymentKey": payload.payment_key,
+                "orderId": payload.order_id,
+                "amount": payload.amount,
+            }).encode(),
+            headers={"Authorization": f"Basic {auth}", "Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=20) as response:
+                toss_result = json.loads(response.read().decode())
+        except urllib.error.HTTPError as exc:
+            error_body = exc.read().decode(errors="replace")
+            logger.error("Toss payment confirmation rejected: status=%s body=%s", exc.code, error_body)
+            raise HTTPException(status_code=502, detail="토스 결제 승인에 실패했습니다. 테스트 키 쌍과 결제 정보를 확인해 주세요.") from exc
+        except (urllib.error.URLError, TimeoutError) as exc:
+            logger.exception("Toss payment confirmation connection failed")
+            raise HTTPException(status_code=502, detail="토스 결제 승인 서버에 연결하지 못했습니다.") from exc
+
+        if toss_result.get("orderId") != booking.order_id or toss_result.get("totalAmount") != booking.amount:
+            logger.error("Toss confirmation returned mismatched order or amount: order_id=%s", booking.order_id)
+            raise HTTPException(status_code=502, detail="토스 승인 결과의 주문 또는 금액 검증에 실패했습니다.")
+
+        booking.payment_key = payload.payment_key
+        booking.status = "CONFIRMED"
+        db.commit()
+        return {"order_id": booking.order_id, "hotel_name": booking.hotel_name, "status": booking.status, "amount": booking.amount}
+    except HTTPException:
+        db.rollback()
+        raise
     finally:
         db.close()
 

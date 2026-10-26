@@ -1,9 +1,12 @@
 // views/components/hotel_card.tsx
+import { getHotelImage } from "@/lib/hotel-images";
+
 export const HotelCard = ({ hotel, onClick }: { hotel: any; onClick?: () => void }) => {
+  const providedImage = hotel.image_url ?? hotel.imageUrl;
   const imageSrc =
-    hotel.image_url ??
-    hotel.imageUrl ??
-    `https://loremflickr.com/800/600/mansion,villa/all?lock=${hotel.id}`;
+    providedImage && !providedImage.includes("loremflickr.com")
+      ? providedImage
+      : getHotelImage(hotel.id);
   const nightlyPrice = hotel.price ?? hotel.price_per_night;
   const rating = hotel.rating ?? 4.5;
   const stayNights = hotel.stay_nights ?? 1;
@@ -34,7 +37,7 @@ export const HotelCard = ({ hotel, onClick }: { hotel: any; onClick?: () => void
           onError={(e) => {
             const img = e.currentTarget;
             img.onerror = null;
-            img.src = `https://loremflickr.com/800/600/mansion,villa/all?lock=fallback-${hotel.id}`;
+            img.src = getHotelImage(hotel.id, 1);
           }}
         />
         <button className="absolute top-3 right-3 text-white/80 hover:text-[#0F766E]">
